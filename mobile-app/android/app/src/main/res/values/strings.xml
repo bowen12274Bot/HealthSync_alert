@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">HealthSync Alert</string>
+    <string name="title_activity_main">HealthSync Alert</string>
+    <string name="package_name">com.healthsync.alert</string>
+    <string name="custom_url_scheme">com.healthsync.alert</string>
+</resources>
