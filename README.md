@@ -17,16 +17,12 @@ HealthSync_Alert/
 └─ scripts/      # 開發與部署輔助腳本
 ```
 
-## 目前狀態
+## 文件入口
 
-- 已建立根目錄與子專案目錄結構
-- 尚未初始化前端框架
-- 尚未初始化後端框架
-- 尚未加入功能實作程式碼
-
-## 建議下一步
-
-1. 在 `mobile-app/` 內初始化 Vue 3 專案
-2. 在 `mobile-app/` 內加入 Capacitor
-3. 在 `server/` 內初始化 FastAPI 專案
-4. 後續再建立 PostgreSQL 與 SQLite 的整合設定
+- 文件總覽：`docs/README.md`
+- 系統架構：`docs/architecture.md`
+- 專案範圍與後續方向：`docs/project-scope.md`
+- 手機端初始化與啟動：`docs/setup/mobile-app-setup.md`
+- 後端初始化與啟動：`docs/setup/server-setup.md`
+- Android Studio 環境設定：`docs/setup/android-studio-setup.md`
+- 協作規範：`CONTRIBUTING.md`
