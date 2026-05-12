@@ -14,6 +14,18 @@ const CREATE_LOCAL_RECORDS_TABLE_SQL = `
   );
 `
 
+/** 即時健康資料表，由 data-collector 模組每 5 秒寫入一筆 */
+const CREATE_REALTIME_HEALTH_RECORDS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS realtime_health_records (
+    id          TEXT    PRIMARY KEY NOT NULL,
+    heart_rate  INTEGER NOT NULL,
+    hrv         INTEGER NOT NULL,
+    sp_o2       REAL    NOT NULL,
+    recorded_at TEXT    NOT NULL,
+    sync_status TEXT    NOT NULL DEFAULT 'unsynced'
+  );
+`
+
 let sqliteConnection: SQLiteConnection | null = null
 let databaseConnection: SQLiteDBConnection | null = null
 
@@ -65,6 +77,7 @@ export async function getDatabaseConnection(): Promise<SQLiteDBConnection> {
 
   await databaseConnection.open()
   await databaseConnection.execute(CREATE_LOCAL_RECORDS_TABLE_SQL)
+  await databaseConnection.execute(CREATE_REALTIME_HEALTH_RECORDS_TABLE_SQL)
 
   return databaseConnection
 }
