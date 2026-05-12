@@ -1,0 +1,49 @@
+:root {
+  color: #163250;
+  background:
+    radial-gradient(circle at top left, rgba(134, 176, 240, 0.22), transparent 26%),
+    radial-gradient(circle at bottom left, rgba(134, 176, 240, 0.18), transparent 22%),
+    linear-gradient(180deg, #f2f7fd 0%, #e8eff8 100%);
+  font-family:
+    'Segoe UI',
+    'PingFang TC',
+    'Microsoft JhengHei',
+    sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --app-device-width: 412px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-width: 320px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}

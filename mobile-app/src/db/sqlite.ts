@@ -1,5 +1,4 @@
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite'
-import { Capacitor } from '@capacitor/core'
 
 const DATABASE_NAME = 'healthsync_local.db'
 const DATABASE_VERSION = 1
@@ -14,6 +13,18 @@ const CREATE_LOCAL_RECORDS_TABLE_SQL = `
   );
 `
 
+/** 即時健康資料表，由 data-collector 模組每 5 秒寫入一筆 */
+const CREATE_REALTIME_HEALTH_RECORDS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS realtime_health_records (
+    id          TEXT    PRIMARY KEY NOT NULL,
+    heart_rate  INTEGER NOT NULL,
+    hrv         INTEGER NOT NULL,
+    sp_o2       REAL    NOT NULL,
+    recorded_at TEXT    NOT NULL,
+    sync_status TEXT    NOT NULL DEFAULT 'unsynced'
+  );
+`
+
 let sqliteConnection: SQLiteConnection | null = null
 let databaseConnection: SQLiteDBConnection | null = null
 
@@ -25,28 +36,12 @@ function getSQLiteConnection(): SQLiteConnection {
   return sqliteConnection
 }
 
-async function ensureWebStoreReady(connection: SQLiteConnection): Promise<void> {
-  if (Capacitor.getPlatform() !== 'web') {
-    return
-  }
-
-  await customElements.whenDefined('jeep-sqlite')
-  const jeepSqliteEl = document.querySelector('jeep-sqlite')
-
-  if (!jeepSqliteEl) {
-    throw new Error('jeep-sqlite element is missing. Web SQLite bridge is not ready.')
-  }
-
-  await connection.initWebStore()
-}
-
 export async function getDatabaseConnection(): Promise<SQLiteDBConnection> {
   if (databaseConnection) {
     return databaseConnection
   }
 
   const connection = getSQLiteConnection()
-  await ensureWebStoreReady(connection)
 
   const consistency = await connection.checkConnectionsConsistency()
   const isConnectionAvailable = (await connection.isConnection(DATABASE_NAME, DATABASE_READ_ONLY)).result
@@ -65,6 +60,7 @@ export async function getDatabaseConnection(): Promise<SQLiteDBConnection> {
 
   await databaseConnection.open()
   await databaseConnection.execute(CREATE_LOCAL_RECORDS_TABLE_SQL)
+  await databaseConnection.execute(CREATE_REALTIME_HEALTH_RECORDS_TABLE_SQL)
 
   return databaseConnection
 }

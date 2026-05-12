@@ -14,7 +14,9 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 def create_db_tables() -> None:
     # Load model modules so SQLAlchemy metadata is populated before create_all runs.
+    importlib.import_module("app.models.auth_token")
     importlib.import_module("app.models.health_check_record")
+    importlib.import_module("app.models.user_account")
 
     Base.metadata.create_all(bind=engine)
 
