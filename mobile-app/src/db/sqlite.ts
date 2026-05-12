@@ -1,5 +1,4 @@
 import { CapacitorSQLite, SQLiteConnection, type SQLiteDBConnection } from '@capacitor-community/sqlite'
-import { Capacitor } from '@capacitor/core'
 
 const DATABASE_NAME = 'healthsync_local.db'
 const DATABASE_VERSION = 1
@@ -37,28 +36,12 @@ function getSQLiteConnection(): SQLiteConnection {
   return sqliteConnection
 }
 
-async function ensureWebStoreReady(connection: SQLiteConnection): Promise<void> {
-  if (Capacitor.getPlatform() !== 'web') {
-    return
-  }
-
-  await customElements.whenDefined('jeep-sqlite')
-  const jeepSqliteEl = document.querySelector('jeep-sqlite')
-
-  if (!jeepSqliteEl) {
-    throw new Error('jeep-sqlite element is missing. Web SQLite bridge is not ready.')
-  }
-
-  await connection.initWebStore()
-}
-
 export async function getDatabaseConnection(): Promise<SQLiteDBConnection> {
   if (databaseConnection) {
     return databaseConnection
   }
 
   const connection = getSQLiteConnection()
-  await ensureWebStoreReady(connection)
 
   const consistency = await connection.checkConnectionsConsistency()
   const isConnectionAvailable = (await connection.isConnection(DATABASE_NAME, DATABASE_READ_ONLY)).result

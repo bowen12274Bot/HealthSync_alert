@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core'
+
 import { getDatabaseConnection } from '@/db/sqlite'
 
 import { generateHealthRecord } from './generator'
@@ -15,11 +17,15 @@ let intervalId: ReturnType<typeof setInterval> | null = null
 // ─── 資料庫寫入 ───────────────────────────────────────────────────────────────
 
 async function writeRecord(record: RawHealthRecord): Promise<void> {
+  if (!Capacitor.isNativePlatform()) {
+    return
+  }
+
   const db = await getDatabaseConnection()
   await db.run(
     `INSERT INTO realtime_health_records
        (id, heart_rate, hrv, sp_o2, recorded_at, sync_status)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    VALUES (?, ?, ?, ?, ?, ?)`,
     [record.id, record.heartRate, record.hrv, record.spO2, record.recordedAt, record.syncStatus],
   )
 }
