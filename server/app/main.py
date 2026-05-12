@@ -3,14 +3,21 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.core.config import settings
-from app.core.database import create_db_tables
+from app.core.database import SessionLocal, create_db_tables
+from app.core.seed import seed_user_account
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     create_db_tables()
+    db = SessionLocal()
+    try:
+        seed_user_account(db)
+    finally:
+        db.close()
     yield
 
 
@@ -44,3 +51,4 @@ def read_root() -> dict[str, str]:
 
 
 app.include_router(health_router)
+app.include_router(auth_router)

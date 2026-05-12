@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+
 import AppShell from '@/components/AppShell.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const settingItems = [
   '個人資料',
@@ -8,12 +11,33 @@ const settingItems = [
   '關於系統',
   '登出',
 ]
+
+const router = useRouter()
+const authStore = useAuthStore()
+
+async function handleSettingAction(item: string) {
+  if (item === '個人資料') {
+    await router.push({ name: 'profile' })
+    return
+  }
+
+  if (item === '登出') {
+    await authStore.logout()
+    await router.replace({ name: 'login' })
+  }
+}
 </script>
 
 <template>
   <AppShell title="設定">
     <section class="settings-card">
-      <button v-for="item in settingItems" :key="item" class="settings-item" type="button">
+      <button
+        v-for="item in settingItems"
+        :key="item"
+        class="settings-item"
+        type="button"
+        @click="handleSettingAction(item)"
+      >
         <span>{{ item }}</span>
         <span class="item-arrow">></span>
       </button>

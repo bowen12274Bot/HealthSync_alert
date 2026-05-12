@@ -12,14 +12,14 @@ defineProps<{
         <section class="phone-screen">
           <header class="screen-header">
             <h1>{{ title }}</h1>
-            <button
+            <RouterLink
               v-if="showProfileShortcut"
               class="profile-shortcut"
-              type="button"
+              to="/profile"
               aria-label="個人資料"
             >
               <span class="profile-avatar"></span>
-            </button>
+            </RouterLink>
           </header>
 
           <main class="screen-content">

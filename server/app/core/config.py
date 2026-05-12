@@ -18,6 +18,8 @@ class Settings:
     app_host: str
     app_port: int
     database_url: str
+    seed_user_email: str
+    seed_user_password: str
 
 
 def get_settings() -> Settings:
@@ -30,6 +32,8 @@ def get_settings() -> Settings:
             "DATABASE_URL",
             "postgresql+psycopg://healthsync_user:healthsync_password@127.0.0.1:5432/healthsync_alert",
         ),
+        seed_user_email=os.getenv("SEED_USER_EMAIL", ""),
+        seed_user_password=os.getenv("SEED_USER_PASSWORD", ""),
     )
 
 
