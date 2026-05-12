@@ -1,7 +1,22 @@
+import { Capacitor } from '@capacitor/core'
+
 import type { HealthResponse } from '@/types/api'
 
-const defaultBaseUrl =
-  import.meta.env.VITE_API_BASE_URL?.trim() || 'http://127.0.0.1:8000'
+function getDefaultBaseUrl(): string {
+  const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
+
+  if (configuredBaseUrl) {
+    return configuredBaseUrl
+  }
+
+  if (Capacitor.getPlatform() === 'android') {
+    return 'http://10.0.2.2:8000'
+  }
+
+  return 'http://127.0.0.1:8000'
+}
+
+const defaultBaseUrl = getDefaultBaseUrl()
 
 export function getApiBaseUrl(): string {
   return defaultBaseUrl
