@@ -19,6 +19,7 @@
     "@capacitor/android": "^8.3.3",
     "@capacitor/cli": "^8.3.3",
     "@capacitor/core": "^8.3.3",
+    "@capacitor/network": "^8.0.1",
     "jeep-sqlite": "^2.8.0",
     "localforage": "^1.10.0",
     "pinia": "^3.0.4",

@@ -11,6 +11,30 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U healthsync_user -d healthsync_alert"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./server
+    container_name: healthsync-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_NAME: HealthSync Alert API
+      APP_ENV: development
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      DATABASE_URL: postgresql+psycopg://healthsync_user:healthsync_password@postgres:5432/healthsync_alert
+      SEED_USER_EMAIL: demo@healthsync.local
+      SEED_USER_PASSWORD: healthsync-demo
+    ports:
+      - "8000:8000"
 
 volumes:
   postgres_data:

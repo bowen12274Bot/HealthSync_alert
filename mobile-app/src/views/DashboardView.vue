@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import AppShell from '@/components/AppShell.vue'
+import { useConnectionStatus } from '@/composables/useConnectionStatus'
+
+const { isOnline, isPinging, isRetrying, retryCountdownSeconds } = useConnectionStatus()
 </script>
 
 <template>
@@ -46,9 +49,21 @@ import AppShell from '@/components/AppShell.vue'
           <span>手環已連線</span>
         </article>
         <article class="system-card">
-          <p>同步狀態</p>
-          <strong>已同步</strong>
-          <span>上次同步：剛剛</span>
+          <p>連線狀態</p>
+          <strong :class="{ 'state-online': isOnline, 'state-offline': !isOnline }">
+            {{ isOnline ? '已連線' : '離線' }}
+          </strong>
+          <span>
+            {{
+              isOnline
+                ? '上次同步：剛剛'
+                : !isRetrying
+                  ? '等待網路恢復'
+                  : isPinging
+                    ? '重試連線中'
+                    : `Retry ${retryCountdownSeconds} 秒`
+            }}
+          </span>
         </article>
       </section>
     </section>
@@ -186,6 +201,14 @@ import AppShell from '@/components/AppShell.vue'
 .metric-card strong {
   font-size: 2rem;
   line-height: 1;
+}
+
+.state-online {
+  color: #2f8f4e;
+}
+
+.state-offline {
+  color: #c14a2e;
 }
 
 .metric-card span {

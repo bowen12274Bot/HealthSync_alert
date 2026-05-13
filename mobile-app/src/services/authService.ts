@@ -16,8 +16,20 @@ export interface CurrentUser {
   status: string
 }
 
+function createNetworkErrorMessage(): Error {
+  return new Error('目前無法連線到伺服器，請確認網路狀態後再試一次')
+}
+
+async function performJsonRequest(input: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init)
+  } catch {
+    throw createNetworkErrorMessage()
+  }
+}
+
 export async function loginWithEmailPassword(payload: LoginRequest): Promise<LoginResponse> {
-  const response = await fetch(`${getApiBaseUrl()}/auth/login`, {
+  const response = await performJsonRequest(`${getApiBaseUrl()}/auth/login`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -38,7 +50,7 @@ export async function loginWithEmailPassword(payload: LoginRequest): Promise<Log
 }
 
 export async function fetchCurrentUser(token: string): Promise<CurrentUser> {
-  const response = await fetch(`${getApiBaseUrl()}/auth/me`, {
+  const response = await performJsonRequest(`${getApiBaseUrl()}/auth/me`, {
     method: 'GET',
     headers: {
       Accept: 'application/json',
@@ -55,18 +67,4 @@ export async function fetchCurrentUser(token: string): Promise<CurrentUser> {
   }
 
   return (await response.json()) as CurrentUser
-}
-
-export async function logoutSession(token: string): Promise<void> {
-  const response = await fetch(`${getApiBaseUrl()}/auth/logout`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-  })
-
-  if (!response.ok && response.status !== 401) {
-    throw new Error(`登出失敗：${response.status}`)
-  }
 }
