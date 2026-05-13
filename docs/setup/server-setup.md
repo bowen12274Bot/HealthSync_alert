@@ -14,36 +14,27 @@
 
 開始前請先安裝：
 
-- Python
 - Docker Desktop
 
 ## 4. 後端準備步驟
 
-第一次準備後端環境時，通常先做下面這些事。這一段適合交給 AI 幫忙執行：
+第一次準備後端環境時，統一使用 Docker 啟動資料庫與後端：
 
 ```powershell
-cd server
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-Copy-Item .env.example .env
+docker compose up --build
 ```
 
-資料庫由根目錄的 Docker Compose 啟動，這一段也適合交給 AI 幫忙執行：
+啟動後：
 
-```powershell
-cd ..
-docker compose up -d postgres
-cd server
-```
+- PostgreSQL: `localhost:5433`
+- API: `http://localhost:8000`
 
 ## 5. 日常使用流程
 
-日常需要進行後端開發或檢查時，可先在 `server/` 啟動服務：
+日常需要進行後端開發或檢查時，統一使用 Docker：
 
 ```powershell
-cd server
-uvicorn app.main:app --reload
+docker compose up --build
 ```
 
-如果之後需要調整資料庫或環境設定，再依實際情況詢問 AI 協助即可。
+如果有特殊需求，例如要改成本機終端機直接啟動後端，再請 AI 協助處理即可。
