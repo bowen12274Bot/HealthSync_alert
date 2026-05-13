@@ -2,6 +2,8 @@ import { Capacitor } from '@capacitor/core'
 
 import type { HealthResponse } from '@/types/api'
 
+const HEALTH_CHECK_TIMEOUT_MS = 3000
+
 function getDefaultBaseUrl(): string {
   const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
 
@@ -23,12 +25,24 @@ export function getApiBaseUrl(): string {
 }
 
 export async function fetchServerHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${defaultBaseUrl}/health`, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-    },
-  })
+  const abortController = new AbortController()
+  const timeoutId = setTimeout(() => {
+    abortController.abort()
+  }, HEALTH_CHECK_TIMEOUT_MS)
+
+  let response: Response
+
+  try {
+    response = await fetch(`${defaultBaseUrl}/health`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: abortController.signal,
+    })
+  } finally {
+    clearTimeout(timeoutId)
+  }
 
   if (!response.ok) {
     throw new Error(`Request failed with status ${response.status}`)

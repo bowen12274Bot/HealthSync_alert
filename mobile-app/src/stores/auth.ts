@@ -4,25 +4,28 @@ import { defineStore } from 'pinia'
 import {
   fetchCurrentUser,
   loginWithEmailPassword,
-  logoutSession,
   type CurrentUser,
 } from '@/services/authService'
 import {
-  clearAuthToken,
-  readAuthToken,
-  writeAuthToken,
+  clearAuthSession,
+  readAuthSession,
+  writeAuthSession,
 } from '@/services/tokenStorage'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref('')
   const currentUser = ref<CurrentUser | null>(null)
   const isReady = ref(false)
-  const isAuthenticated = computed(() => token.value.length > 0 && currentUser.value !== null)
+  const isAuthenticated = computed(() => token.value.length > 0)
+
+  function applySession(nextToken: string, nextUser: CurrentUser | null) {
+    token.value = nextToken
+    currentUser.value = nextUser
+  }
 
   async function clearSession() {
-    token.value = ''
-    currentUser.value = null
-    await clearAuthToken()
+    applySession('', null)
+    await clearAuthSession()
   }
 
   async function initialize() {
@@ -30,42 +33,26 @@ export const useAuthStore = defineStore('auth', () => {
       return
     }
 
-    const storedToken = await readAuthToken()
+    const { token: storedToken, user: storedUser } = await readAuthSession()
 
     if (!storedToken) {
       isReady.value = true
       return
     }
 
-    try {
-      currentUser.value = await fetchCurrentUser(storedToken)
-      token.value = storedToken
-    } catch {
-      await clearSession()
-    } finally {
-      isReady.value = true
-    }
+    applySession(storedToken, storedUser)
+    isReady.value = true
   }
 
   async function login(email: string, password: string) {
     const result = await loginWithEmailPassword({ email, password })
-    currentUser.value = await fetchCurrentUser(result.access_token)
-    token.value = result.access_token
-    await writeAuthToken(result.access_token)
+    const user = await fetchCurrentUser(result.access_token)
+    applySession(result.access_token, user)
+    await writeAuthSession({ token: result.access_token, user })
     isReady.value = true
   }
 
   async function logout() {
-    const currentToken = token.value
-
-    if (currentToken) {
-      try {
-        await logoutSession(currentToken)
-      } catch {
-        // Local logout still wins if the network or server logout fails.
-      }
-    }
-
     await clearSession()
     isReady.value = true
   }
