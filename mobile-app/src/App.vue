@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onUnmounted, watch } from 'vue'
 
-import { startDataGeneration, stopDataGeneration } from '@/modules/data-collector'
+import { ensureDefaultSimulationScenario, pauseSimulation } from '@/composables/useSimulationControl'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -10,17 +10,17 @@ watch(
   () => authStore.isAuthenticated,
   (isAuthenticated) => {
     if (isAuthenticated) {
-      startDataGeneration()
+      ensureDefaultSimulationScenario()
       return
     }
 
-    stopDataGeneration()
+    pauseSimulation()
   },
   { immediate: true },
 )
 
 onUnmounted(() => {
-  stopDataGeneration()
+  pauseSimulation()
 })
 </script>
 

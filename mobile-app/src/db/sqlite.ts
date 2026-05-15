@@ -20,6 +20,7 @@ const CREATE_REALTIME_HEALTH_RECORDS_TABLE_SQL = `
     heart_rate  INTEGER NOT NULL,
     hrv         INTEGER NOT NULL,
     sp_o2       REAL    NOT NULL,
+    activity_level INTEGER NOT NULL,
     recorded_at TEXT    NOT NULL,
     sync_status TEXT    NOT NULL DEFAULT 'unsynced'
   );
