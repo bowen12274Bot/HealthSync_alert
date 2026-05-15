@@ -3,11 +3,13 @@ import { useRouter } from 'vue-router'
 
 import AppShell from '@/components/AppShell.vue'
 import { useConnectionStatus } from '@/composables/useConnectionStatus'
+import { useLatestHealthRecord } from '@/composables/useLatestHealthRecord'
 import { useSimulationControl } from '@/composables/useSimulationControl'
 
 const { isOnline, isPinging, isRetrying, retryCountdownSeconds } = useConnectionStatus()
 const router = useRouter()
 const { currentScenarioName, simulationStatusText } = useSimulationControl()
+const { heartRate, hrv, spO2 } = useLatestHealthRecord()
 
 function openSimulationView(): void {
   void router.push({ name: 'data-simulation' })
@@ -33,21 +35,21 @@ function openSimulationView(): void {
       <section class="metric-grid">
         <article class="metric-card heart">
           <p>心率</p>
-          <strong>72</strong>
+          <strong>{{ heartRate }}</strong>
           <span>bpm</span>
           <small>正常範圍：50 - 100</small>
         </article>
         <article class="metric-card oxygen">
           <p>血氧</p>
-          <strong>98%</strong>
+          <strong>{{ spO2 }}%</strong>
           <span>SpO₂</span>
           <small>正常範圍：95% - 100%</small>
         </article>
         <article class="metric-card hrv">
           <p>HRV</p>
-          <strong>58</strong>
+          <strong>{{ hrv }}</strong>
           <span>ms</span>
-          <small>正常範圍：96 - 100</small>
+          <small>正常範圍：20 - 120</small>
         </article>
       </section>
 
