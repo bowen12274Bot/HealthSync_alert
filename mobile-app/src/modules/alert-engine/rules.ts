@@ -2,6 +2,7 @@ import type {
   ActivityBaselineProfile,
   ActivityLevel,
   AlertLifecycleStatus,
+  AlertSeverityLevel,
   AlertType,
   AlertTypeTransition,
   AnalysisStage,
@@ -257,6 +258,72 @@ export function mapRiskScoreToAlertStatus(
   }
 
   return '警戒'
+}
+
+export function getAlertSeverityLevel(riskScore: number): AlertSeverityLevel {
+  if (riskScore <= 2) {
+    return 0
+  }
+
+  if (riskScore <= 4) {
+    return 1
+  }
+
+  if (riskScore <= 6) {
+    return 2
+  }
+
+  return 3
+}
+
+function isActiveAlertStatus(status: AlertLifecycleStatus): boolean {
+  return status === '觀察中' || status === '注意' || status === '警戒'
+}
+
+function isRecoveryCandidate(riskScore: number): boolean {
+  return getAlertSeverityLevel(riskScore) === 0
+}
+
+export function resolveNextAlertStatus(params: {
+  currentStatus: AlertLifecycleStatus
+  currentRiskScore: number
+  nextRiskScore: number
+  consecutiveRecoveryCount: number
+}): AlertLifecycleStatus {
+  const nextActiveStatus = mapRiskScoreToAlertStatus(params.nextRiskScore)
+
+  if (nextActiveStatus !== null) {
+    if (params.currentStatus === '恢復中') {
+      return nextActiveStatus
+    }
+
+    if (isActiveAlertStatus(params.currentStatus)) {
+      const currentSeverity = getAlertSeverityLevel(params.currentRiskScore)
+      const nextSeverity = getAlertSeverityLevel(params.nextRiskScore)
+
+      if (nextSeverity >= currentSeverity) {
+        return nextActiveStatus
+      }
+
+      if (currentSeverity - nextSeverity >= 2) {
+        return '恢復中'
+      }
+
+      return nextActiveStatus
+    }
+
+    return nextActiveStatus
+  }
+
+  if (params.currentStatus === '恢復中') {
+    return params.consecutiveRecoveryCount >= 2 ? '已解除' : '恢復中'
+  }
+
+  if (isActiveAlertStatus(params.currentStatus) && isRecoveryCandidate(params.nextRiskScore)) {
+    return '恢復中'
+  }
+
+  return '已解除'
 }
 
 export function determineAlertType(

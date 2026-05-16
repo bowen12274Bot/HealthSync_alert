@@ -5,6 +5,7 @@ import {
   createRealtimeAlert,
   getActiveRealtimeAlert,
   getLatestAlertStatus,
+  getRecentAlertStatuses,
   getRecentRealtimeHealthRecords,
   updateRealtimeAlertType,
 } from './repository'
@@ -14,6 +15,7 @@ import {
   determineAlertType,
   mapRiskScoreToAlertStatus,
   resolveAlertTypeTransition,
+  resolveNextAlertStatus,
 } from './rules'
 
 import type {
@@ -81,18 +83,22 @@ async function createInitialAlertRecords(params: {
 async function appendResolvedStatus(params: {
   alertId: string
   recordedAt: string
+  status: AlertLifecycleStatus
+  riskScore: number
   statusDescription: string
 }): Promise<void> {
   await appendAlertStatus({
     statusId: crypto.randomUUID(),
     alertId: params.alertId,
-    status: '已解除',
-    riskScore: 0,
+    status: params.status,
+    riskScore: params.riskScore,
     statusTime: params.recordedAt,
     statusDescription: params.statusDescription,
   })
 
-  await closeRealtimeAlert(params.alertId, params.recordedAt)
+  if (params.status === '已解除' || params.status === '已轉移') {
+    await closeRealtimeAlert(params.alertId, params.recordedAt)
+  }
 }
 
 export async function analyzeLatestWindow(): Promise<AlertAnalysisResult> {
@@ -125,13 +131,35 @@ export async function analyzeLatestWindow(): Promise<AlertAnalysisResult> {
       })
     } else {
       const latestStatus = await getLatestAlertStatus(activeAlert.alertId)
+      const recentStatuses = await getRecentAlertStatuses(activeAlert.alertId, 2)
+      const consecutiveRecoveryCount = recentStatuses.filter(
+        (statusRecord) => statusRecord.status === '恢復中',
+      ).length
       const transition = resolveAlertTypeTransition(
         activeAlert.alertType as AlertType,
         nextDetectedType,
       )
 
       if (transition === 'same') {
-        if (status !== null && latestStatus?.status !== status) {
+        if (latestStatus !== null) {
+          const nextStatus = resolveNextAlertStatus({
+            currentStatus: latestStatus.status,
+            currentRiskScore: latestStatus.riskScore,
+            nextRiskScore: riskScoreResult.riskScore,
+            consecutiveRecoveryCount,
+          })
+
+          if (latestStatus.status !== nextStatus) {
+            await appendAlertStatus({
+              statusId: crypto.randomUUID(),
+              alertId: activeAlert.alertId,
+              status: nextStatus,
+              riskScore: riskScoreResult.riskScore,
+              statusTime: latestRecord.recordedAt,
+              statusDescription: riskScoreResult.triggerReasons.join('、') || '預警事件持續中',
+            })
+          }
+        } else if (status !== null) {
           await appendAlertStatus({
             statusId: crypto.randomUUID(),
             alertId: activeAlert.alertId,
@@ -146,7 +174,26 @@ export async function analyzeLatestWindow(): Promise<AlertAnalysisResult> {
       if (transition === 'upgrade') {
         await updateRealtimeAlertType(activeAlert.alertId, nextDetectedType)
 
-        if (status !== null && latestStatus?.status !== status) {
+        if (latestStatus !== null) {
+          const nextStatus = resolveNextAlertStatus({
+            currentStatus: latestStatus.status,
+            currentRiskScore: latestStatus.riskScore,
+            nextRiskScore: riskScoreResult.riskScore,
+            consecutiveRecoveryCount,
+          })
+
+          if (latestStatus.status !== nextStatus) {
+            await appendAlertStatus({
+              statusId: crypto.randomUUID(),
+              alertId: activeAlert.alertId,
+              status: nextStatus,
+              riskScore: riskScoreResult.riskScore,
+              statusTime: latestRecord.recordedAt,
+              statusDescription:
+                riskScoreResult.triggerReasons.join('、') || '預警主因升級為綜合生理風險',
+            })
+          }
+        } else if (status !== null) {
           await appendAlertStatus({
             statusId: crypto.randomUUID(),
             alertId: activeAlert.alertId,
@@ -163,6 +210,8 @@ export async function analyzeLatestWindow(): Promise<AlertAnalysisResult> {
         await appendResolvedStatus({
           alertId: activeAlert.alertId,
           recordedAt: latestRecord.recordedAt,
+          status: '已轉移',
+          riskScore: riskScoreResult.riskScore,
           statusDescription: '原主因不再成立，改由新預警事件承接',
         })
 
@@ -183,13 +232,34 @@ export async function analyzeLatestWindow(): Promise<AlertAnalysisResult> {
 
       if (transition === 'resolve') {
         const latestStatus = await getLatestAlertStatus(activeAlert.alertId)
+        const recentStatuses = await getRecentAlertStatuses(activeAlert.alertId, 2)
+        const consecutiveRecoveryCount = recentStatuses.filter(
+          (statusRecord) => statusRecord.status === '恢復中',
+        ).length
 
-        if (latestStatus?.status !== '已解除') {
-          await appendResolvedStatus({
-            alertId: activeAlert.alertId,
-            recordedAt: latestRecord.recordedAt,
-            statusDescription: '本輪分析已不再達到預警成立門檻',
+        if (latestStatus !== null) {
+          const nextStatus = resolveNextAlertStatus({
+            currentStatus: latestStatus.status,
+            currentRiskScore: latestStatus.riskScore,
+            nextRiskScore: riskScoreResult.riskScore,
+            consecutiveRecoveryCount:
+              latestStatus.status === '恢復中'
+                ? consecutiveRecoveryCount + 1
+                : 1,
           })
+
+          if (latestStatus.status !== nextStatus) {
+            await appendResolvedStatus({
+              alertId: activeAlert.alertId,
+              recordedAt: latestRecord.recordedAt,
+              status: nextStatus,
+              riskScore: riskScoreResult.riskScore,
+              statusDescription:
+                nextStatus === '已解除'
+                  ? '最新連續 2 次符合恢復條件，事件解除'
+                  : '本輪分析已不再達到預警成立門檻，進入恢復中',
+            })
+          }
         }
       }
     }

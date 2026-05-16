@@ -175,6 +175,31 @@ export async function getLatestAlertStatus(alertId: string): Promise<AlertStatus
   return mapRowToAlertStatusRecord(row as Record<string, unknown>)
 }
 
+export async function getRecentAlertStatuses(
+  alertId: string,
+  limit: number = 2,
+): Promise<AlertStatusRecord[]> {
+  if (!Capacitor.isNativePlatform()) {
+    return []
+  }
+
+  const db = await getDatabaseConnection()
+  const result = await db.query(
+    `SELECT status_id, alert_id, status, risk_score, status_time, status_description
+       FROM alert_status
+      WHERE alert_id = ?
+      ORDER BY status_time DESC
+      LIMIT ?`,
+    [alertId, limit],
+  )
+
+  const statuses = (result.values ?? []).map((row) =>
+    mapRowToAlertStatusRecord(row as Record<string, unknown>),
+  )
+
+  return statuses.reverse()
+}
+
 export async function updateRealtimeAlertType(
   alertId: string,
   alertType: AlertType,

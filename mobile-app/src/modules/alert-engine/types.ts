@@ -53,7 +53,15 @@ export type AlertType =
 
 export type AlertTypeTransition = 'same' | 'upgrade' | 'replace' | 'resolve'
 
-export type AlertLifecycleStatus = '觀察中' | '注意' | '警戒' | '恢復中' | '已解除'
+export type AlertLifecycleStatus =
+  | '觀察中'
+  | '注意'
+  | '警戒'
+  | '恢復中'
+  | '已解除'
+  | '已轉移'
+
+export type AlertSeverityLevel = 0 | 1 | 2 | 3
 
 export interface RealtimeAlertRecord {
   alertId: string
