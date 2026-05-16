@@ -1,9 +1,6 @@
-import { Capacitor } from '@capacitor/core'
-
-import { getDatabaseConnection } from '@/db/sqlite'
-
 import { generateHealthRecord } from './generator'
-import type { RawHealthRecord } from './types'
+import { getGenerationContext } from './runtime'
+import { writeHealthRecord } from '../storage/repository'
 
 // ─── 常數 ────────────────────────────────────────────────────────────────────
 
@@ -14,27 +11,12 @@ const GENERATION_INTERVAL_MS = 5_000
 
 let intervalId: ReturnType<typeof setInterval> | null = null
 
-// ─── 資料庫寫入 ───────────────────────────────────────────────────────────────
-
-async function writeRecord(record: RawHealthRecord): Promise<void> {
-  if (!Capacitor.isNativePlatform()) {
-    return
-  }
-
-  const db = await getDatabaseConnection()
-  await db.run(
-    `INSERT INTO realtime_health_records
-       (id, heart_rate, hrv, sp_o2, recorded_at, sync_status)
-    VALUES (?, ?, ?, ?, ?, ?)`,
-    [record.id, record.heartRate, record.hrv, record.spO2, record.recordedAt, record.syncStatus],
-  )
-}
-
 // ─── 排程核心 ─────────────────────────────────────────────────────────────────
 
 async function tick(): Promise<void> {
-  const record = generateHealthRecord()
-  await writeRecord(record)
+  const context = getGenerationContext()
+  const record = generateHealthRecord(context)
+  await writeHealthRecord(record)
 }
 
 // ─── 對外控制函式（由 index.ts 重新導出） ─────────────────────────────────────
@@ -47,7 +29,7 @@ export function startScheduler(): void {
   if (intervalId !== null) return
   intervalId = setInterval(() => {
     tick().catch((err: unknown) => {
-      console.error('[data-collector] 寫入失敗：', err)
+      console.error('[health-simulation] 寫入失敗：', err)
     })
   }, GENERATION_INTERVAL_MS)
 }

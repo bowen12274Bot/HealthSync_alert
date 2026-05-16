@@ -1,4 +1,4 @@
-import type { RawHealthRecord, ScenarioProvider } from './types'
+import type { GenerationContext, RawHealthRecord } from '../types'
 
 // ─── 生理參數常數 ────────────────────────────────────────────────────────────
 
@@ -87,35 +87,14 @@ function generateSpO2(): number {
   return parseFloat(clamp(raw, 85, 100).toFixed(1))
 }
 
-// ─── 情境提供者（可選，供未來劇本擴充） ──────────────────────────────────────
-
-let scenarioProvider: ScenarioProvider | null = null
-
-/**
- * 設定情境提供者。
- * 傳入 null 可清除，回到正常時間模式生成。
- *
- * @example
- * // 注入低血氧情境
- * setScenarioProvider(() => ({ spO2Override: 82 }))
- *
- * // 清除情境，恢復正常
- * setScenarioProvider(null)
- */
-export function setScenarioProvider(provider: ScenarioProvider | null): void {
-  scenarioProvider = provider
-}
-
-// ─── 主要生成函式 ─────────────────────────────────────────────────────────────
-
 /**
  * 生成一筆即時健康資料。
- * 情境提供者存在時，以其回傳值覆蓋對應欄位。
+ * 生成器只負責根據輸入 context 產生資料，不持有執行時狀態。
  */
-export function generateHealthRecord(): RawHealthRecord {
+export function generateHealthRecord(context: GenerationContext): RawHealthRecord {
   const now = new Date()
   const phase = getCircadianPhase(now)
-  const scenario = scenarioProvider?.() ?? null
+  const scenario = context.scenarioOverride
 
   const heartRate = scenario?.heartRateOverride ?? generateHeartRate(phase)
   const hrv = scenario?.hrvOverride ?? generateHRV(heartRate)
@@ -126,7 +105,7 @@ export function generateHealthRecord(): RawHealthRecord {
     heartRate,
     hrv,
     spO2,
+    activityLevel: context.activityLevel,
     recordedAt: now.toISOString(),
-    syncStatus: 'unsynced',
   }
 }

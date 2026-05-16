@@ -1,8 +1,19 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+
 import AppShell from '@/components/AppShell.vue'
 import { useConnectionStatus } from '@/composables/useConnectionStatus'
+import { useLatestHealthRecord } from '@/composables/useLatestHealthRecord'
+import { useSimulationControl } from '@/composables/useSimulationControl'
 
 const { isOnline, isPinging, isRetrying, retryCountdownSeconds } = useConnectionStatus()
+const router = useRouter()
+const { currentScenarioName, simulationStatusText } = useSimulationControl()
+const { heartRate, hrv, spO2 } = useLatestHealthRecord()
+
+function openSimulationView(): void {
+  void router.push({ name: 'data-simulation' })
+}
 </script>
 
 <template>
@@ -24,30 +35,30 @@ const { isOnline, isPinging, isRetrying, retryCountdownSeconds } = useConnection
       <section class="metric-grid">
         <article class="metric-card heart">
           <p>心率</p>
-          <strong>72</strong>
+          <strong>{{ heartRate }}</strong>
           <span>bpm</span>
           <small>正常範圍：50 - 100</small>
         </article>
         <article class="metric-card oxygen">
           <p>血氧</p>
-          <strong>98%</strong>
+          <strong>{{ spO2 }}%</strong>
           <span>SpO₂</span>
           <small>正常範圍：95% - 100%</small>
         </article>
         <article class="metric-card hrv">
           <p>HRV</p>
-          <strong>58</strong>
+          <strong>{{ hrv }}</strong>
           <span>ms</span>
-          <small>正常範圍：96 - 100</small>
+          <small>正常範圍：20 - 120</small>
         </article>
       </section>
 
       <section class="system-strip">
-        <article class="system-card">
-          <p>裝置狀態</p>
-          <strong>已連線</strong>
-          <span>手環已連線</span>
-        </article>
+        <button class="system-card simulation-card" type="button" @click="openSimulationView">
+          <p>資料生成</p>
+          <strong>{{ currentScenarioName }}</strong>
+          <span>{{ simulationStatusText }}</span>
+        </button>
         <article class="system-card">
           <p>連線狀態</p>
           <strong :class="{ 'state-online': isOnline, 'state-offline': !isOnline }">
@@ -246,5 +257,28 @@ const { isOnline, isPinging, isRetrying, retryCountdownSeconds } = useConnection
   padding: 18px;
   display: grid;
   gap: 6px;
+}
+
+.simulation-card {
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+  background:
+    radial-gradient(circle at top right, rgba(55, 116, 216, 0.16), transparent 38%),
+    rgba(255, 255, 255, 0.92);
+}
+
+.simulation-card:hover,
+.simulation-card:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 22px 44px rgba(35, 63, 103, 0.14);
+}
+
+.simulation-card:focus-visible {
+  outline: 2px solid #3374d8;
+  outline-offset: 2px;
 }
 </style>

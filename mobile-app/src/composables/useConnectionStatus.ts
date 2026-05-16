@@ -138,11 +138,16 @@ async function refreshConnectionStatus() {
 }
 
 async function handleDeviceNetworkChange(nextDeviceOnline: boolean) {
+  const wasDeviceOnline = deviceOnline.value
   deviceOnline.value = nextDeviceOnline
 
   if (!nextDeviceOnline) {
     stopRetryTimer()
     updateStatus(false)
+    return
+  }
+
+  if (wasDeviceOnline && status.value === 'online') {
     return
   }
 

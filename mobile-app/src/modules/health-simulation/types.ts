@@ -1,4 +1,4 @@
-export type SyncStatus = 'unsynced' | 'synced'
+export type ActivityLevel = 0 | 1 | 2 | 3
 
 export interface RawHealthRecord {
   /** UUID，作為主鍵 */
@@ -9,10 +9,15 @@ export interface RawHealthRecord {
   hrv: number
   /** 血氧濃度，單位：% */
   spO2: number
+  /** 活動等級，由劇本或執行中的模擬上下文提供 */
+  activityLevel: ActivityLevel
   /** 紀錄時間，ISO 8601 格式 */
   recordedAt: string
-  /** 同步狀態 */
-  syncStatus: SyncStatus
+}
+
+export interface GenerationContext {
+  activityLevel: ActivityLevel
+  scenarioOverride: ScenarioOverride | null
 }
 
 /**
@@ -30,3 +35,4 @@ export interface ScenarioOverride {
  * 回傳 null 表示使用正常時間模式；回傳 ScenarioOverride 則覆蓋指定欄位。
  */
 export type ScenarioProvider = () => ScenarioOverride | null
+export type ActivityLevelProvider = () => ActivityLevel
