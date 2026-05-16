@@ -1,4 +1,3 @@
-export type SyncStatus = 'unsynced' | 'synced'
 export type ActivityLevel = 0 | 1 | 2 | 3
 
 export interface RawHealthRecord {
@@ -14,8 +13,6 @@ export interface RawHealthRecord {
   activityLevel: ActivityLevel
   /** 紀錄時間，ISO 8601 格式 */
   recordedAt: string
-  /** 同步狀態 */
-  syncStatus: SyncStatus
 }
 
 export interface GenerationContext {

@@ -107,6 +107,5 @@ export function generateHealthRecord(context: GenerationContext): RawHealthRecor
     spO2,
     activityLevel: context.activityLevel,
     recordedAt: now.toISOString(),
-    syncStatus: 'unsynced',
   }
 }

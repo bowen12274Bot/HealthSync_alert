@@ -45,7 +45,6 @@ export type {
   RawHealthRecord,
   ScenarioOverride,
   ScenarioProvider,
-  SyncStatus,
 } from './types'
 
 export type { SimulationScenario, SimulationScenarioId } from './scenarios'

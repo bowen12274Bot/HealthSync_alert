@@ -134,6 +134,69 @@ POST /sync/batch
 | `periodic_health_records` | 本輪待同步的週期健康紀錄 |
 | `alerts` | 本輪待同步的完整預警資料 |
 
+### 5.1 正式 request 範例
+
+建議 request body 採用以下格式：
+
+```json
+{
+  "user_id": "user_001",
+  "device_id": "device_android_001",
+  "sync_started_at": "2026-05-16T10:20:15+08:00",
+  "periodic_health_records": [
+    {
+      "window_start": "2026-05-16T10:00:00+08:00",
+      "window_end": "2026-05-16T10:09:59+08:00",
+      "avg_hr": 82,
+      "min_hr": 71,
+      "max_hr": 98,
+      "avg_hrv": 47,
+      "avg_spo2": 97,
+      "min_spo2": 95,
+      "dominant_activity_level": 1,
+      "sample_count": 96
+    }
+  ],
+  "alerts": [
+    {
+      "alert_id": "alert_20260516_001",
+      "alert_type": "spo2_risk",
+      "trigger_reason": "SpO2 sustained low",
+      "initial_risk_score": 5,
+      "max_risk_score": 8,
+      "first_occurred_at": "2026-05-16T10:14:20+08:00",
+      "resolved_at": "2026-05-16T10:19:35+08:00",
+      "status_change_count": 4,
+      "status_history": [
+        {
+          "status": "注意",
+          "risk_score": 5,
+          "status_time": "2026-05-16T10:14:20+08:00",
+          "status_description": "SpO2 持續下降"
+        },
+        {
+          "status": "警戒",
+          "risk_score": 8,
+          "status_time": "2026-05-16T10:16:40+08:00",
+          "status_description": "SpO2 低於安全門檻"
+        },
+        {
+          "status": "已解除",
+          "risk_score": 2,
+          "status_time": "2026-05-16T10:19:35+08:00",
+          "status_description": "數值恢復穩定"
+        }
+      ]
+    }
+  ]
+}
+```
+
+時間欄位建議：
+
+- 一律使用 ISO 8601 datetime 字串
+- 需包含時區資訊
+
 ## 6. 週期健康紀錄格式
 
 每筆週期健康紀錄建議至少包含：
@@ -322,6 +385,17 @@ alert_id
 - 讓手機端確認本輪同步已被伺服器接受
 - 作為本地資料由 `pending` 改為 `synced` 的依據
 
+正式範例：
+
+```json
+{
+  "success": true,
+  "accepted_health_record_count": 1,
+  "accepted_alert_count": 1,
+  "server_received_at": "2026-05-16T10:20:17+08:00"
+}
+```
+
 ### 13.2 失敗回應
 
 失敗回應建議至少包含：
@@ -339,6 +413,16 @@ alert_id
 - 讓手機端知道本輪不可視為成功
 - 本地資料維持 `pending`
 - 後續交由下一輪同步重新補傳
+
+正式範例：
+
+```json
+{
+  "success": false,
+  "error_code": "SYNC_VALIDATION_FAILED",
+  "message": "window_start must be earlier than window_end"
+}
+```
 
 ## 14. 手機端與伺服器端責任切分
 
