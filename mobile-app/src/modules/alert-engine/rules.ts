@@ -1,5 +1,8 @@
 import type {
   ActivityBaselineProfile,
+  ActivityLevel,
+  AlertLifecycleStatus,
+  AlertType,
   AnalysisStage,
   RealtimeHealthRecord,
   RiskScoreResult,
@@ -235,6 +238,55 @@ export function calculateRiskScore(
   }
 
   return calculateFullRiskScore(metrics, baseline)
+}
+
+export function mapRiskScoreToAlertStatus(
+  riskScore: number,
+): AlertLifecycleStatus | null {
+  if (riskScore <= 2) {
+    return null
+  }
+
+  if (riskScore <= 4) {
+    return '觀察中'
+  }
+
+  if (riskScore <= 6) {
+    return '注意'
+  }
+
+  return '警戒'
+}
+
+export function determineAlertType(
+  metrics: WindowMetrics | null,
+  baseline: ActivityBaselineProfile | null,
+  activityLevel: ActivityLevel | null,
+): AlertType | null {
+  if (metrics === null || activityLevel === null) {
+    return null
+  }
+
+  const hasSpO2Low = metrics.spO2Mean < 92
+  const hasSpO2Drop = metrics.spO2Trend <= -3
+  const hasHrIncrease = metrics.hrTrend >= 15
+  const hasHrvDecrease = metrics.hrvTrend <= -20
+  const hasSpO2Risk = hasSpO2Low || hasSpO2Drop
+  const isLowActivity = activityLevel <= 1
+
+  if (hasHrIncrease && hasHrvDecrease && hasSpO2Drop) {
+    return 'combined_physiological_risk'
+  }
+
+  if (hasSpO2Risk) {
+    return 'spo2_risk'
+  }
+
+  if (baseline !== null && isLowActivity && hasHrIncrease && hasHrvDecrease) {
+    return 'physiological_stress'
+  }
+
+  return null
 }
 
 export {
