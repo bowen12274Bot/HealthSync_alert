@@ -2,11 +2,11 @@
 import AppShell from '@/components/AppShell.vue'
 
 const historicalAlerts = [
-  { id: 'alert-20250514-1432', type: '即時預警', title: '發現異常指標', time: '2025/05/14 14:32', level: '中度', theme: 'moderate', icon: '!' },
-  { id: 'alert-20250514-1018', type: '即時預警', title: '心率過高', time: '2025/05/14 10:18', level: '高度', theme: 'high', icon: '～' },
-  { id: 'alert-20250513-2147', type: '即時預警', title: '血氧過低', time: '2025/05/13 21:47', level: '中度', theme: 'moderate', icon: '💧' },
-  { id: 'alert-20250512-1803', type: '長期預警', title: 'HRV 過低', time: '2025/05/12 18:03', level: '輕度', theme: 'mild', icon: '～' },
-  { id: 'alert-20250511-0922', type: '即時預警', title: '發現異常指標', time: '2025/05/11 09:22', level: '中度', theme: 'moderate', icon: '!' },
+  { id: 'alert-20250514-1432', type: '即時預警', title: '發現異常指標', time: '2025/05/14 14:32', maxLevel: '中度', theme: 'moderate', icon: '!' },
+  { id: 'alert-20250514-1018', type: '即時預警', title: '心率過高', time: '2025/05/14 10:18', maxLevel: '高度', theme: 'high', icon: '～' },
+  { id: 'alert-20250513-2147', type: '即時預警', title: '血氧過低', time: '2025/05/13 21:47', maxLevel: '中度', theme: 'moderate', icon: '💧' },
+  { id: 'alert-20250512-1803', type: '長期預警', title: 'HRV 過低', time: '2025/05/12 18:03', maxLevel: '輕度', theme: 'mild', icon: '～' },
+  { id: 'alert-20250511-0922', type: '即時預警', title: '發現異常指標', time: '2025/05/11 09:22', maxLevel: '中度', theme: 'moderate', icon: '!' },
 ]
 </script>
 
@@ -34,7 +34,7 @@ const historicalAlerts = [
           <RouterLink
             class="history-item"
             :class="`theme-${item.theme}`"
-            :to="{ name: 'alert-display', params: { alertId: item.id } }"
+            :to="{ name: 'alert-display-history', params: { alertId: item.id } }"
           >
             <div class="history-icon">{{ item.icon }}</div>
             <div class="history-copy">
@@ -42,7 +42,7 @@ const historicalAlerts = [
               <small>{{ item.time }}</small>
             </div>
             <div class="history-side">
-              <span class="level-chip">{{ item.level }}</span>
+              <span class="level-chip">{{ item.maxLevel }}</span>
               <span class="detail-link">詳情</span>
             </div>
           </RouterLink>

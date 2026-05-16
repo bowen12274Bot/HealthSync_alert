@@ -1,9 +1,35 @@
 <script setup lang="ts">
 import AppShell from '@/components/AppShell.vue'
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+
+const isHistoryMode = computed(() => route.meta.alertMode === 'history')
+const pageTitle = computed(() => (isHistoryMode.value ? '預警詳情' : '即時預警'))
+const statusChipLabel = computed(() => (isHistoryMode.value ? '已解除' : '警戒'))
+const alertInfoItems = computed(() =>
+  isHistoryMode.value
+    ? [
+        { label: '預警類型', value: '血氧風險' },
+        { label: '最終狀態', value: '已解除' },
+        { label: '最高等級', value: '高度' },
+        { label: '開始發生時間', value: '2025/05/14 14:32:18' },
+        { label: '解除時間', value: '2025/05/14 14:41:09' },
+      ]
+    : [
+        { label: '預警類型', value: '血氧風險' },
+        { label: '目前狀態', value: '警戒' },
+        { label: '目前風險等級', value: '高度' },
+        { label: '最高等級', value: '高度' },
+        { label: '開始發生時間', value: '2025/05/14 14:32:18' },
+        { label: '更新時間', value: '2025/05/14 14:36:42' },
+      ],
+)
 </script>
 
 <template>
-  <AppShell title="即時預警">
+  <AppShell :title="pageTitle">
     <section class="alert-display-layout">
       <section class="alert-hero">
         <div class="alert-banner">
@@ -13,7 +39,7 @@ import AppShell from '@/components/AppShell.vue'
             <strong>多項生理指標異常</strong>
             <span>目前狀態與低活動情境不符</span>
           </div>
-          <div class="pending-tag">警戒</div>
+          <div class="pending-tag">{{ statusChipLabel }}</div>
         </div>
 
         <div class="indicator-grid">
@@ -41,25 +67,9 @@ import AppShell from '@/components/AppShell.vue'
 
       <section class="alert-info">
         <dl class="alert-meta">
-          <div>
-            <dt>預警類型</dt>
-            <dd>血氧風險</dd>
-          </div>
-          <div>
-            <dt>目前狀態</dt>
-            <dd>警戒</dd>
-          </div>
-          <div>
-            <dt>風險等級</dt>
-            <dd>高度</dd>
-          </div>
-          <div>
-            <dt>開始發生時間</dt>
-            <dd>2025/05/14 14:32:18</dd>
-          </div>
-          <div>
-            <dt>更新時間</dt>
-            <dd>2025/05/14 14:36:42</dd>
+          <div v-for="item in alertInfoItems" :key="item.label">
+            <dt>{{ item.label }}</dt>
+            <dd>{{ item.value }}</dd>
           </div>
         </dl>
       </section>

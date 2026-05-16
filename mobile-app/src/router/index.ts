@@ -32,10 +32,16 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      path: '/alerts/:alertId',
-      name: 'alert-display',
+      path: '/alerts/live',
+      name: 'alert-display-live',
       component: AlertDisplayView,
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, alertMode: 'live' },
+    },
+    {
+      path: '/alerts/history/:alertId',
+      name: 'alert-display-history',
+      component: AlertDisplayView,
+      meta: { requiresAuth: true, alertMode: 'history' },
     },
     {
       path: '/simulation',
