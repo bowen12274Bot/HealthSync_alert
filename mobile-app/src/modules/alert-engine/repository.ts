@@ -4,6 +4,7 @@ import { getDatabaseConnection } from '@/db/sqlite'
 
 import type {
   AlertStatusRecord,
+  AlertType,
   RealtimeAlertRecord,
   RealtimeHealthRecord,
 } from './types'
@@ -135,6 +136,22 @@ export async function getLatestRealtimeAlert(): Promise<RealtimeAlertRecord | nu
   return mapRowToRealtimeAlertRecord(row as Record<string, unknown>)
 }
 
+export async function getActiveRealtimeAlert(): Promise<RealtimeAlertRecord | null> {
+  const latestAlert = await getLatestRealtimeAlert()
+
+  if (latestAlert === null) {
+    return null
+  }
+
+  const latestStatus = await getLatestAlertStatus(latestAlert.alertId)
+
+  if (latestStatus === null || latestStatus.status === '已解除') {
+    return null
+  }
+
+  return latestAlert
+}
+
 export async function getLatestAlertStatus(alertId: string): Promise<AlertStatusRecord | null> {
   if (!Capacitor.isNativePlatform()) {
     return null
@@ -156,6 +173,40 @@ export async function getLatestAlertStatus(alertId: string): Promise<AlertStatus
   }
 
   return mapRowToAlertStatusRecord(row as Record<string, unknown>)
+}
+
+export async function updateRealtimeAlertType(
+  alertId: string,
+  alertType: AlertType,
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) {
+    return
+  }
+
+  const db = await getDatabaseConnection()
+  await db.run(
+    `UPDATE realtime_alert
+        SET alert_type = ?
+      WHERE alert_id = ?`,
+    [alertType, alertId],
+  )
+}
+
+export async function closeRealtimeAlert(
+  alertId: string,
+  detectionEndTime: string,
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) {
+    return
+  }
+
+  const db = await getDatabaseConnection()
+  await db.run(
+    `UPDATE realtime_alert
+        SET detection_end_time = ?
+      WHERE alert_id = ?`,
+    [detectionEndTime, alertId],
+  )
 }
 
 export { DEFAULT_ANALYSIS_WINDOW_SIZE }

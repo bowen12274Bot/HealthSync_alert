@@ -835,7 +835,162 @@ SpO2 下降
 注意或警戒
 ```
 
-## 19. 完整流程
+## 19. 預警類型與事件轉移規則
+
+同一時間只維護一筆主預警事件。
+
+每輪分析時，系統可先根據當前健康指標判斷候選預警類型，但不代表一定直接改變目前事件的 `alert_type`。
+
+設計重點如下：
+
+- `alert_type` 與 `status` 是兩個不同維度
+- `status` 反映生命週期狀態
+- `alert_type` 反映本次事件的主因類型
+- `alert_type` 允許升級，但不允許降級
+- 若不同單一路徑主因彼此取代，應視為舊事件結束、新事件開始
+
+### 19.1 預警類型
+
+本階段先定義三種預警類型：
+
+```text
+spo2_risk
+physiological_stress
+combined_physiological_risk
+```
+
+語意如下：
+
+- `spo2_risk`：SpO2 持續偏低或明顯下降
+- `physiological_stress`：低活動下 HR 上升、HRV 下降，且 SpO2 沒有明顯下降
+- `combined_physiological_risk`：HR 上升、HRV 下降、SpO2 下降同時出現
+
+### 19.2 預警類型升級關係
+
+目前只允許和 `combined_physiological_risk` 之間的升級關係。
+
+允許：
+
+```text
+physiological_stress -> combined_physiological_risk
+spo2_risk -> combined_physiological_risk
+```
+
+不允許：
+
+```text
+physiological_stress -> spo2_risk
+spo2_risk -> physiological_stress
+combined_physiological_risk -> physiological_stress
+combined_physiological_risk -> spo2_risk
+```
+
+也就是：
+
+- `combined_physiological_risk` 是唯一上位型
+- `spo2_risk` 與 `physiological_stress` 不直接互轉
+- `alert_type` 一旦升級為 `combined_physiological_risk`，後續不再回退為較低階類型
+
+### 19.3 候選預警類型判斷
+
+每輪分析時，系統可先根據當前健康指標判斷候選預警類型，例如：
+
+- 只有 SpO2 異常時，候選類型為 `spo2_risk`
+- 低活動下 HR 上升、HRV 下降，且 SpO2 沒有明顯下降時，候選類型為 `physiological_stress`
+- HR 上升、HRV 下降、SpO2 下降同時出現時，候選類型為 `combined_physiological_risk`
+- 若未達任何預警類型條件，則候選類型為 `null`
+
+此處的候選類型只是本輪分析結果，不代表一定直接修改目前事件的 `alert_type`。
+
+### 19.4 事件轉移規則
+
+當目前不存在進行中的預警事件時：
+
+- 若本輪 `risk_score` 未達預警門檻，則不建立預警
+- 若本輪 `risk_score` 已達預警門檻，則建立新事件
+
+當目前已存在進行中的預警事件時，應比較：
+
+```text
+current alert_type
+本輪候選 alert_type
+```
+
+再決定事件如何轉移。
+
+#### 19.4.1 same
+
+下列情況視為同一事件延續：
+
+- 本輪候選類型與目前 `alert_type` 相同
+- 目前 `alert_type` 為 `combined_physiological_risk`，而本輪候選類型為較低階單一路徑類型
+
+處理方式：
+
+- 維持同一筆事件
+- 不修改 `alert_type`
+- 只更新 `status`
+
+#### 19.4.2 upgrade
+
+下列情況視為同一事件升級：
+
+- `physiological_stress -> combined_physiological_risk`
+- `spo2_risk -> combined_physiological_risk`
+
+處理方式：
+
+- 維持同一筆事件
+- 將 `alert_type` 升級為 `combined_physiological_risk`
+- 更新 `status`
+
+#### 19.4.3 replace
+
+下列情況視為不同主因事件的切換：
+
+- `physiological_stress -> spo2_risk`
+- `spo2_risk -> physiological_stress`
+
+此時不視為同一筆事件的類型變更，而應視為：
+
+```text
+舊事件結束
+新事件開始
+```
+
+處理方式：
+
+- 將舊事件直接標記為 `已解除`
+- 更新舊事件的 `detection_end_time`
+- 建立新的預警事件承接新的主因類型
+
+#### 19.4.4 resolve
+
+若本輪候選類型為 `null`，或整體已不再達到預警成立門檻，則進入解除流程。
+
+處理方式：
+
+- 舊事件進入 `恢復中` 或 `已解除`
+- 更新 `detection_end_time`
+
+### 19.5 status 與 alert_type 的關係
+
+`status` 與 `alert_type` 的意義不同：
+
+- `status` 反映該事件目前的生命週期狀態
+- `alert_type` 反映該事件的主因類型
+
+因此：
+
+- `status` 升降級不等於 `alert_type` 升降級
+- `status` 仍依 `risk_score` 與事件生命週期規則決定
+- `alert_type` 則依健康指標種類與事件轉移規則決定
+
+最重要的原則如下：
+
+> `combined_physiological_risk` 作為唯一上位型，`spo2_risk` 與 `physiological_stress` 不直接互轉；若兩者彼此取代，應視為舊事件結束、新事件開始，而不是同一筆事件的類型變更。
+
+## 20. 完整流程
 
 ```text
 1. 建立 activity_baseline_profile
@@ -873,7 +1028,7 @@ SpO2 下降
 8. 等待後續同步到雲端
 ```
 
-## 20. 核心規則摘要
+## 21. 核心規則摘要
 
 可用以下幾句話總結本設計：
 

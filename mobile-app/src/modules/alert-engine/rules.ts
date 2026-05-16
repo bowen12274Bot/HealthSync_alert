@@ -3,6 +3,7 @@ import type {
   ActivityLevel,
   AlertLifecycleStatus,
   AlertType,
+  AlertTypeTransition,
   AnalysisStage,
   RealtimeHealthRecord,
   RiskScoreResult,
@@ -287,6 +288,35 @@ export function determineAlertType(
   }
 
   return null
+}
+
+export function resolveAlertTypeTransition(
+  currentType: AlertType,
+  nextType: AlertType | null,
+): AlertTypeTransition {
+  if (nextType === null) {
+    return 'resolve'
+  }
+
+  if (nextType === currentType) {
+    return 'same'
+  }
+
+  if (
+    currentType !== 'combined_physiological_risk' &&
+    nextType === 'combined_physiological_risk'
+  ) {
+    return 'upgrade'
+  }
+
+  if (
+    currentType === 'combined_physiological_risk' &&
+    (nextType === 'physiological_stress' || nextType === 'spo2_risk')
+  ) {
+    return 'same'
+  }
+
+  return 'replace'
 }
 
 export {

@@ -1,16 +1,19 @@
 import { getActivityBaselineProfile } from './activityBaselineStub'
 import {
   appendAlertStatus,
+  closeRealtimeAlert,
   createRealtimeAlert,
+  getActiveRealtimeAlert,
   getLatestAlertStatus,
-  getLatestRealtimeAlert,
   getRecentRealtimeHealthRecords,
+  updateRealtimeAlertType,
 } from './repository'
 import {
   calculateRiskScore,
   calculateWindowMetrics,
   determineAlertType,
   mapRiskScoreToAlertStatus,
+  resolveAlertTypeTransition,
 } from './rules'
 
 import type {
@@ -41,17 +44,6 @@ function getCurrentActivityLevel(
 ): RealtimeHealthRecord['activityLevel'] | null {
   const latestRecord = records.at(-1)
   return latestRecord?.activityLevel ?? null
-}
-
-async function hasActiveRealtimeAlert(): Promise<boolean> {
-  const latestAlert = await getLatestRealtimeAlert()
-
-  if (latestAlert === null) {
-    return false
-  }
-
-  const latestStatus = await getLatestAlertStatus(latestAlert.alertId)
-  return latestStatus !== null && latestStatus.status !== '已解除'
 }
 
 async function createInitialAlertRecords(params: {
@@ -86,6 +78,23 @@ async function createInitialAlertRecords(params: {
   })
 }
 
+async function appendResolvedStatus(params: {
+  alertId: string
+  recordedAt: string
+  statusDescription: string
+}): Promise<void> {
+  await appendAlertStatus({
+    statusId: crypto.randomUUID(),
+    alertId: params.alertId,
+    status: '已解除',
+    riskScore: 0,
+    statusTime: params.recordedAt,
+    statusDescription: params.statusDescription,
+  })
+
+  await closeRealtimeAlert(params.alertId, params.recordedAt)
+}
+
 export async function analyzeLatestWindow(): Promise<AlertAnalysisResult> {
   const records = await getRecentRealtimeHealthRecords(FULL_ANALYSIS_SAMPLE_THRESHOLD)
   const sampleCount = records.length
@@ -95,23 +104,94 @@ export async function analyzeLatestWindow(): Promise<AlertAnalysisResult> {
     currentActivityLevel === null ? null : getActivityBaselineProfile(currentActivityLevel)
   const metrics = calculateWindowMetrics(records)
   const riskScoreResult = calculateRiskScore(analysisStage, metrics, baseline)
-  const alertType = determineAlertType(metrics, baseline, currentActivityLevel)
+  const candidateAlertType = determineAlertType(metrics, baseline, currentActivityLevel)
   const status = mapRiskScoreToAlertStatus(riskScoreResult.riskScore)
   const latestRecord = records.at(-1)
+  const nextDetectedType =
+    riskScoreResult.riskScore >= 3 ? candidateAlertType : null
   const shouldTriggerAlert =
-    riskScoreResult.riskScore >= 3 && alertType !== null && status !== null
+    riskScoreResult.riskScore >= 3 && nextDetectedType !== null && status !== null
 
   if (shouldTriggerAlert && latestRecord !== undefined) {
-    const activeAlertExists = await hasActiveRealtimeAlert()
+    const activeAlert = await getActiveRealtimeAlert()
 
-    if (!activeAlertExists) {
+    if (activeAlert === null) {
       await createInitialAlertRecords({
-        alertType,
+        alertType: nextDetectedType,
         status,
         riskScore: riskScoreResult.riskScore,
         triggerReasons: riskScoreResult.triggerReasons,
         recordedAt: latestRecord.recordedAt,
       })
+    } else {
+      const latestStatus = await getLatestAlertStatus(activeAlert.alertId)
+      const transition = resolveAlertTypeTransition(
+        activeAlert.alertType as AlertType,
+        nextDetectedType,
+      )
+
+      if (transition === 'same') {
+        if (status !== null && latestStatus?.status !== status) {
+          await appendAlertStatus({
+            statusId: crypto.randomUUID(),
+            alertId: activeAlert.alertId,
+            status,
+            riskScore: riskScoreResult.riskScore,
+            statusTime: latestRecord.recordedAt,
+            statusDescription: riskScoreResult.triggerReasons.join('、') || '預警事件持續中',
+          })
+        }
+      }
+
+      if (transition === 'upgrade') {
+        await updateRealtimeAlertType(activeAlert.alertId, nextDetectedType)
+
+        if (status !== null && latestStatus?.status !== status) {
+          await appendAlertStatus({
+            statusId: crypto.randomUUID(),
+            alertId: activeAlert.alertId,
+            status,
+            riskScore: riskScoreResult.riskScore,
+            statusTime: latestRecord.recordedAt,
+            statusDescription:
+              riskScoreResult.triggerReasons.join('、') || '預警主因升級為綜合生理風險',
+          })
+        }
+      }
+
+      if (transition === 'replace') {
+        await appendResolvedStatus({
+          alertId: activeAlert.alertId,
+          recordedAt: latestRecord.recordedAt,
+          statusDescription: '原主因不再成立，改由新預警事件承接',
+        })
+
+        await createInitialAlertRecords({
+          alertType: nextDetectedType,
+          status,
+          riskScore: riskScoreResult.riskScore,
+          triggerReasons: riskScoreResult.triggerReasons,
+          recordedAt: latestRecord.recordedAt,
+        })
+      }
+    }
+  } else if (latestRecord !== undefined) {
+    const activeAlert = await getActiveRealtimeAlert()
+
+    if (activeAlert !== null) {
+      const transition = resolveAlertTypeTransition(activeAlert.alertType as AlertType, null)
+
+      if (transition === 'resolve') {
+        const latestStatus = await getLatestAlertStatus(activeAlert.alertId)
+
+        if (latestStatus?.status !== '已解除') {
+          await appendResolvedStatus({
+            alertId: activeAlert.alertId,
+            recordedAt: latestRecord.recordedAt,
+            statusDescription: '本輪分析已不再達到預警成立門檻',
+          })
+        }
+      }
     }
   }
 

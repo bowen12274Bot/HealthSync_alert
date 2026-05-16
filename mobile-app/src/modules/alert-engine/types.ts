@@ -51,6 +51,8 @@ export type AlertType =
   | 'physiological_stress'
   | 'combined_physiological_risk'
 
+export type AlertTypeTransition = 'same' | 'upgrade' | 'replace' | 'resolve'
+
 export type AlertLifecycleStatus = '觀察中' | '注意' | '警戒' | '恢復中' | '已解除'
 
 export interface RealtimeAlertRecord {
