@@ -94,6 +94,7 @@ periodic_health_record
 - 手機端同步上來的預警資料屬於來源預警歷史
 - 伺服器端的 `長期預警表` 仍由伺服器後端長期分析模組自行產生
 - 同步接收流程不直接建立長期預警資料
+- 歷史資料摘要以最高等級為主，不保留目前狀態與目前等級這類即時欄位
 
 ## 4. API 設計方向
 
@@ -164,6 +165,7 @@ POST /sync/batch
       "trigger_reason": "SpO2 sustained low",
       "initial_risk_score": 5,
       "max_risk_score": 8,
+      "max_severity_level": "高度",
       "first_occurred_at": "2026-05-16T10:14:20+08:00",
       "resolved_at": "2026-05-16T10:19:35+08:00",
       "status_change_count": 4,
@@ -233,6 +235,7 @@ POST /sync/batch
   "trigger_reason": "string",
   "initial_risk_score": 0,
   "max_risk_score": 0,
+  "max_severity_level": "string",
   "first_occurred_at": "datetime",
   "resolved_at": "datetime",
   "status_change_count": 0,
@@ -256,6 +259,7 @@ POST /sync/batch
 - payload 應優先對齊伺服器長期預警資料需求
 - 不要求與手機本地資料表一比一對應
 - 以伺服器可直接寫入預警歷史表為目標
+- 摘要欄位應以該筆預警曾達到的最高風險為主，因此應保留 `max_risk_score` 與 `max_severity_level`
 
 ## 8. 伺服器接收流程
 
