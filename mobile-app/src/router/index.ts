@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import AlertDisplayView from '@/views/AlertDisplayView.vue'
 import AlertRecordsView from '@/views/AlertRecordsView.vue'
 import DataSimulationView from '@/views/DataSimulationView.vue'
 import DashboardView from '@/views/DashboardView.vue'
@@ -28,6 +29,12 @@ const router = createRouter({
       path: '/alerts',
       name: 'alert-records',
       component: AlertRecordsView,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/alerts/:alertId',
+      name: 'alert-display',
+      component: AlertDisplayView,
       meta: { requiresAuth: true },
     },
     {

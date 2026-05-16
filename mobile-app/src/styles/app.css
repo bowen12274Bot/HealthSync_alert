@@ -16,6 +16,13 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   --app-device-width: 412px;
+  --surface-card-radius: 24px;
+  --surface-card-bg: rgba(255, 255, 255, 0.9);
+  --surface-card-shadow: 0 18px 40px rgba(35, 63, 103, 0.1);
+  --surface-soft-bg: #f8fbff;
+  --text-primary: #163250;
+  --text-secondary: #6d8094;
+  --text-accent: #2c68ae;
 }
 
 * {
