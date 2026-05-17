@@ -14,6 +14,7 @@ from app.core.security import (
 )
 from app.models.auth.auth_token import AuthToken
 from app.models.auth.user_account import UserAccount
+from app.models.profile.activity_baseline_profile import ActivityBaselineProfile
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -35,6 +36,14 @@ class CurrentUserResponse(BaseModel):
     id: int
     email: str
     status: str
+
+
+class ActivityBaselineProfileItemResponse(BaseModel):
+    activity_level: int
+    target_hr: int
+    target_hrv: int
+    target_spo2: int
+    updated_at: datetime
 
 
 class AuthenticatedSession:
@@ -136,6 +145,44 @@ def get_current_user(
         email=session.user.email,
         status=session.user.status,
     )
+
+
+@router.get("/me/baseline")
+def get_current_user_activity_baseline_profiles(
+    session: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    db: DbSession,
+) -> list[ActivityBaselineProfileItemResponse]:
+    user_profile = session.user.user_profile
+
+    if user_profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User profile not found",
+        )
+
+    baseline_profiles = (
+        db.query(ActivityBaselineProfile)
+        .filter(ActivityBaselineProfile.user_profile_id == user_profile.id)
+        .order_by(ActivityBaselineProfile.activity_level.asc())
+        .all()
+    )
+
+    if not baseline_profiles:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Activity baseline profile not found",
+        )
+
+    return [
+        ActivityBaselineProfileItemResponse(
+            activity_level=profile.activity_level,
+            target_hr=profile.target_hr,
+            target_hrv=profile.target_hrv,
+            target_spo2=profile.target_spo2,
+            updated_at=profile.updated_at,
+        )
+        for profile in baseline_profiles
+    ]
 
 
 @router.post("/logout")

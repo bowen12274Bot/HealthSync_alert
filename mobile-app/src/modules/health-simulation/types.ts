@@ -1,5 +1,12 @@
 export type ActivityLevel = 0 | 1 | 2 | 3
 
+export interface ActivityBaselineProfile {
+  activityLevel: ActivityLevel
+  targetHr: number
+  targetHrv: number
+  targetSpO2: number
+}
+
 export interface RawHealthRecord {
   /** UUID，作為主鍵 */
   id: string

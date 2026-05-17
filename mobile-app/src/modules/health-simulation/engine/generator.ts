@@ -1,20 +1,22 @@
-import type { ActivityLevel, GenerationContext, RawHealthRecord } from '../types'
+import type {
+  ActivityBaselineProfile,
+  ActivityLevel,
+  GenerationContext,
+  RawHealthRecord,
+} from '../types'
 
-// ─── 生理參數常數 ────────────────────────────────────────────────────────────
+// ─── 基準設定 ────────────────────────────────────────────────────────────────
 
-const ACTIVITY_BASELINE_PROFILE: Record<
+type BaselineState = Record<
   ActivityLevel,
   {
     targetHeartRate: number
     targetHrv: number
     targetSpO2: number
   }
-> = {
-  0: { targetHeartRate: 72, targetHrv: 55, targetSpO2: 97 },
-  1: { targetHeartRate: 90, targetHrv: 45, targetSpO2: 97 },
-  2: { targetHeartRate: 115, targetHrv: 35, targetSpO2: 96 },
-  3: { targetHeartRate: 145, targetHrv: 25, targetSpO2: 96 },
-}
+>
+
+let activityBaselineProfile: BaselineState | null = null
 
 const HR_ADAPT_RATE = 0.28
 const HRV_ADAPT_RATE = 0.24
@@ -53,10 +55,18 @@ function roundToOneDecimal(value: number): number {
   return parseFloat(value.toFixed(1))
 }
 
+function requireActivityBaselineProfile(): BaselineState {
+  if (activityBaselineProfile === null) {
+    throw new Error('activity_baseline_profile 尚未初始化')
+  }
+
+  return activityBaselineProfile
+}
+
 // ─── 各數值生成函式 ───────────────────────────────────────────────────────────
 
 function getInitialState(activityLevel: ActivityLevel): GeneratorState {
-  const target = ACTIVITY_BASELINE_PROFILE[activityLevel]
+  const target = requireActivityBaselineProfile()[activityLevel]
 
   return {
     heartRate: target.targetHeartRate,
@@ -75,7 +85,7 @@ function advanceState(context: GenerationContext, now: Date): GeneratorState {
     currentState = getInitialState(context.activityLevel)
   }
 
-  const target = ACTIVITY_BASELINE_PROFILE[context.activityLevel]
+  const target = requireActivityBaselineProfile()[context.activityLevel]
   const nowMs = now.getTime()
 
   const nextHeartRate = clamp(
@@ -118,6 +128,27 @@ function advanceState(context: GenerationContext, now: Date): GeneratorState {
 
 export function resetHealthGenerator(activityLevel: ActivityLevel): void {
   currentState = getInitialState(activityLevel)
+}
+
+export function setActivityBaselineProfiles(
+  profiles: readonly ActivityBaselineProfile[],
+): void {
+  if (profiles.length === 0) {
+    activityBaselineProfile = null
+    return
+  }
+
+  const nextProfiles = {} as BaselineState
+
+  for (const profile of profiles) {
+    nextProfiles[profile.activityLevel] = {
+      targetHeartRate: profile.targetHr,
+      targetHrv: profile.targetHrv,
+      targetSpO2: profile.targetSpO2,
+    }
+  }
+
+  activityBaselineProfile = nextProfiles
 }
 
 /**

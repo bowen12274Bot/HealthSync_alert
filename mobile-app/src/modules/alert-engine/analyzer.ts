@@ -1,8 +1,8 @@
-import { getActivityBaselineProfile } from './activityBaselineStub'
 import {
   appendAlertStatus,
   closeRealtimeAlert,
   createRealtimeAlert,
+  getCachedActivityBaselineProfile,
   getActiveRealtimeAlert,
   getLatestAlertStatus,
   getRecentAlertStatuses,
@@ -41,6 +41,34 @@ export function determineAnalysisStage(sampleCount: number): AnalysisStage {
   return 'full_analysis'
 }
 
+async function evaluateAlertCandidate(records: RealtimeHealthRecord[]): Promise<{
+  riskScore: number
+  triggerReasons: string[]
+  alertType: AlertType | null
+  status: AlertLifecycleStatus | null
+}> {
+  const analysisStage = determineAnalysisStage(records.length)
+  const currentActivityLevel = getCurrentActivityLevel(records)
+  const baseline =
+    currentActivityLevel === null
+      ? null
+      : await getCachedActivityBaselineProfile(currentActivityLevel)
+  const metrics = calculateWindowMetrics(records)
+  const riskScoreResult = calculateRiskScore(analysisStage, metrics, baseline)
+  const alertType =
+    riskScoreResult.riskScore >= 3
+      ? determineAlertType(metrics, baseline, currentActivityLevel)
+      : null
+  const status = mapRiskScoreToAlertStatus(riskScoreResult.riskScore)
+
+  return {
+    riskScore: riskScoreResult.riskScore,
+    triggerReasons: riskScoreResult.triggerReasons,
+    alertType,
+    status,
+  }
+}
+
 function getCurrentActivityLevel(
   records: RealtimeHealthRecord[],
 ): RealtimeHealthRecord['activityLevel'] | null {
@@ -53,7 +81,8 @@ async function createInitialAlertRecords(params: {
   status: AlertLifecycleStatus
   riskScore: number
   triggerReasons: string[]
-  recordedAt: string
+  detectionStartTime: string
+  firstOccurredAt: string
 }): Promise<void> {
   const alertId = crypto.randomUUID()
   const statusId = crypto.randomUUID()
@@ -64,9 +93,9 @@ async function createInitialAlertRecords(params: {
     alertType: params.alertType,
     initialRiskScore: params.riskScore,
     triggerReason,
-    detectionStartTime: params.recordedAt,
+    detectionStartTime: params.detectionStartTime,
     detectionEndTime: null,
-    firstOccurredAt: params.recordedAt,
+    firstOccurredAt: params.firstOccurredAt,
     syncStatus: 'pending',
   })
 
@@ -75,7 +104,7 @@ async function createInitialAlertRecords(params: {
     alertId,
     status: params.status,
     riskScore: params.riskScore,
-    statusTime: params.recordedAt,
+    statusTime: params.detectionStartTime,
     statusDescription: triggerReason || '分析模組偵測到預警條件成立',
   })
 }
@@ -107,7 +136,9 @@ export async function analyzeLatestWindow(): Promise<AlertAnalysisResult> {
   const analysisStage = determineAnalysisStage(sampleCount)
   const currentActivityLevel = getCurrentActivityLevel(records)
   const baseline =
-    currentActivityLevel === null ? null : getActivityBaselineProfile(currentActivityLevel)
+    currentActivityLevel === null
+      ? null
+      : await getCachedActivityBaselineProfile(currentActivityLevel)
   const metrics = calculateWindowMetrics(records)
   const riskScoreResult = calculateRiskScore(analysisStage, metrics, baseline)
   const candidateAlertType = determineAlertType(metrics, baseline, currentActivityLevel)
@@ -122,13 +153,27 @@ export async function analyzeLatestWindow(): Promise<AlertAnalysisResult> {
     const activeAlert = await getActiveRealtimeAlert()
 
     if (activeAlert === null) {
-      await createInitialAlertRecords({
-        alertType: nextDetectedType,
-        status,
-        riskScore: riskScoreResult.riskScore,
-        triggerReasons: riskScoreResult.triggerReasons,
-        recordedAt: latestRecord.recordedAt,
-      })
+      const previousRecords = records.slice(0, -1)
+      const previousLatestRecord = previousRecords.at(-1)
+
+      if (previousLatestRecord !== undefined) {
+        const previousCandidate = await evaluateAlertCandidate(previousRecords)
+        const hasConsecutiveAnomaly =
+          previousCandidate.riskScore >= 3 &&
+          previousCandidate.alertType !== null &&
+          previousCandidate.status !== null
+
+        if (hasConsecutiveAnomaly) {
+          await createInitialAlertRecords({
+            alertType: nextDetectedType,
+            status,
+            riskScore: riskScoreResult.riskScore,
+            triggerReasons: riskScoreResult.triggerReasons,
+            detectionStartTime: latestRecord.recordedAt,
+            firstOccurredAt: previousLatestRecord.recordedAt,
+          })
+        }
+      }
     } else {
       const latestStatus = await getLatestAlertStatus(activeAlert.alertId)
       const recentStatuses = await getRecentAlertStatuses(activeAlert.alertId, 2)
@@ -220,7 +265,8 @@ export async function analyzeLatestWindow(): Promise<AlertAnalysisResult> {
           status,
           riskScore: riskScoreResult.riskScore,
           triggerReasons: riskScoreResult.triggerReasons,
-          recordedAt: latestRecord.recordedAt,
+          detectionStartTime: latestRecord.recordedAt,
+          firstOccurredAt: latestRecord.recordedAt,
         })
       }
     }

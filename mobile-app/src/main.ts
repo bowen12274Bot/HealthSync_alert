@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import { Capacitor } from '@capacitor/core'
 
 import App from './App.vue'
 import { getDatabaseConnection } from './db/sqlite'
@@ -11,13 +12,15 @@ async function bootstrap(): Promise<void> {
   const app = createApp(App)
   app.use(pinia)
 
-  await getDatabaseConnection()
-
-  const authStore = useAuthStore()
-  await authStore.initialize()
+  if (Capacitor.isNativePlatform()) {
+    await getDatabaseConnection()
+  }
 
   app.use(router)
   app.mount('#app')
+
+  const authStore = useAuthStore()
+  void authStore.initialize()
 }
 
 void bootstrap()

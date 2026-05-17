@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { getDatabaseConnection } from '@/db/sqlite'
 
 import type {
+  ActivityBaselineProfile,
   AlertStatusRecord,
   AlertType,
   RealtimeAlertRecord,
@@ -10,6 +11,17 @@ import type {
 } from './types'
 
 const DEFAULT_ANALYSIS_WINDOW_SIZE = 12
+
+function mapRowToActivityBaselineProfile(
+  row: Record<string, unknown>,
+): ActivityBaselineProfile {
+  return {
+    activityLevel: Number(row.activity_level) as ActivityBaselineProfile['activityLevel'],
+    targetHr: Number(row.target_hr),
+    targetHrv: Number(row.target_hrv),
+    targetSpO2: Number(row.target_spo2),
+  }
+}
 
 function mapRowToRealtimeHealthRecord(row: Record<string, unknown>): RealtimeHealthRecord {
   return {
@@ -43,6 +55,74 @@ export async function getRecentRealtimeHealthRecords(
   )
 
   return records.reverse()
+}
+
+export async function replaceCachedActivityBaselineProfiles(
+  profiles: readonly ActivityBaselineProfile[],
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) {
+    return
+  }
+
+  const db = await getDatabaseConnection()
+  await db.execute('DELETE FROM activity_baseline_profile')
+
+  for (const profile of profiles) {
+    await db.run(
+      `INSERT INTO activity_baseline_profile
+         (baseline_id, activity_level, target_hr, target_hrv, target_spo2, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        crypto.randomUUID(),
+        profile.activityLevel,
+        profile.targetHr,
+        profile.targetHrv,
+        profile.targetSpO2,
+        new Date().toISOString(),
+      ],
+    )
+  }
+}
+
+export async function getCachedActivityBaselineProfile(
+  activityLevel: ActivityBaselineProfile['activityLevel'],
+): Promise<ActivityBaselineProfile | null> {
+  if (!Capacitor.isNativePlatform()) {
+    return null
+  }
+
+  const db = await getDatabaseConnection()
+  const result = await db.query(
+    `SELECT activity_level, target_hr, target_hrv, target_spo2
+       FROM activity_baseline_profile
+      WHERE activity_level = ?
+      LIMIT 1`,
+    [activityLevel],
+  )
+
+  const row = result.values?.[0]
+  if (!row) {
+    return null
+  }
+
+  return mapRowToActivityBaselineProfile(row as Record<string, unknown>)
+}
+
+export async function listCachedActivityBaselineProfiles(): Promise<ActivityBaselineProfile[]> {
+  if (!Capacitor.isNativePlatform()) {
+    return []
+  }
+
+  const db = await getDatabaseConnection()
+  const result = await db.query(
+    `SELECT activity_level, target_hr, target_hrv, target_spo2
+       FROM activity_baseline_profile
+      ORDER BY activity_level ASC`,
+  )
+
+  return (result.values ?? []).map((row) =>
+    mapRowToActivityBaselineProfile(row as Record<string, unknown>),
+  )
 }
 
 function mapRowToRealtimeAlertRecord(row: Record<string, unknown>): RealtimeAlertRecord {
