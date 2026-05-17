@@ -27,6 +27,9 @@ async function tick(): Promise<void> {
  */
 export function startScheduler(): void {
   if (intervalId !== null) return
+  tick().catch((err: unknown) => {
+    console.error('[health-simulation] 寫入失敗：', err)
+  })
   intervalId = setInterval(() => {
     tick().catch((err: unknown) => {
       console.error('[health-simulation] 寫入失敗：', err)

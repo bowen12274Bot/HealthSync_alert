@@ -3,7 +3,9 @@ import {
   startScheduler,
   stopScheduler,
 } from './engine/schedule'
+import { resetHealthGenerator } from './engine/generator'
 import {
+  setActiveScript,
   setActivityLevelProvider,
   setScenarioProvider,
 } from './engine/runtime'
@@ -28,8 +30,10 @@ export const simulationScheduler = {
 } as const
 
 export const simulationRuntime = {
+  setActiveScript,
   setActivityLevelProvider,
   setScenarioProvider,
+  resetHealthGenerator,
 } as const
 
 export const simulationScenarios = {
@@ -45,6 +49,9 @@ export type {
   RawHealthRecord,
   ScenarioOverride,
   ScenarioProvider,
+  ScenarioDelta,
+  SimulationScript,
+  SimulationSegment,
 } from './types'
 
 export type { SimulationScenario, SimulationScenarioId } from './scenarios'
