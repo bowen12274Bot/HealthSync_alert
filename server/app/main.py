@@ -7,17 +7,20 @@ from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.core.config import settings
 from app.core.database import SessionLocal, create_db_tables
-from app.core.seed import seed_user_account
+from app.core.seed import seed_demo_data
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    create_db_tables()
-    db = SessionLocal()
-    try:
-        seed_user_account(db)
-    finally:
-        db.close()
+    if settings.auto_create_tables:
+        create_db_tables()
+
+    if settings.auto_seed_demo_data:
+        db = SessionLocal()
+        try:
+            seed_demo_data(db)
+        finally:
+            db.close()
     yield
 
 

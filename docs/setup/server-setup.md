@@ -37,4 +37,20 @@ docker compose up --build
 docker compose up --build
 ```
 
-如果有特殊需求，例如要改成本機終端機直接啟動後端，再請 AI 協助處理即可。
+如果需要手動管理伺服器資料庫，可再專案根目錄使用：
+
+```powershell
+docker compose exec api python scripts/manage_db.py create
+docker compose exec api python scripts/manage_db.py drop
+docker compose exec api python scripts/manage_db.py reset
+docker compose exec api python scripts/manage_db.py seed
+```
+
+其中：
+
+- `create`：建立資料表
+- `drop`：刪除資料表
+- `reset`：重建資料表
+- `seed`：寫入預設測試資料
+
+如果有特殊需求，例如要改成在本機終端機直接啟動後端和操作資料庫，再請 AI 協助處理即可。

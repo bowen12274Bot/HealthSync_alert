@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 if TYPE_CHECKING:
-    from app.models.user_account import UserAccount
+    from app.models.auth.user_account import UserAccount
 
 
 class AuthToken(Base):

@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core'
 
 import { getDatabaseConnection } from '@/db/sqlite'
+import { analyzeLatestWindow } from '@/modules/alert-engine'
 
 import type { RawHealthRecord } from '../types'
 
@@ -47,6 +48,8 @@ export async function writeHealthRecord(record: RawHealthRecord): Promise<void> 
       record.recordedAt,
     ],
   )
+
+  await analyzeLatestWindow()
 }
 
 export async function getLatestHealthRecord(): Promise<RawHealthRecord | null> {
