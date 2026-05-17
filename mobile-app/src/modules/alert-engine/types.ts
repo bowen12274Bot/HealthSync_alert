@@ -26,6 +26,7 @@ export interface WindowMetrics {
   hrvTrend: number
 
   spO2Mean: number
+  spO2Recent30sMean: number
   spO2Std: number
   spO2Trend: number
 }

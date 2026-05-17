@@ -11,6 +11,8 @@ import type {
   WindowMetrics,
 } from './types'
 
+const RECENT_30_SECONDS_SAMPLE_COUNT = 6
+
 function calculateMean(values: number[]): number {
   if (values.length === 0) {
     return 0
@@ -55,6 +57,7 @@ export function calculateWindowMetrics(records: RealtimeHealthRecord[]): WindowM
   const heartRateValues = records.map((record) => record.heartRate)
   const hrvValues = records.map((record) => record.hrv)
   const spO2Values = records.map((record) => record.spO2)
+  const recentSpO2Values = spO2Values.slice(-RECENT_30_SECONDS_SAMPLE_COUNT)
 
   return {
     sampleCount: records.length,
@@ -68,16 +71,17 @@ export function calculateWindowMetrics(records: RealtimeHealthRecord[]): WindowM
     hrvTrend: calculateTrend(hrvValues),
 
     spO2Mean: calculateMean(spO2Values),
+    spO2Recent30sMean: calculateMean(recentSpO2Values),
     spO2Std: calculateStd(spO2Values),
     spO2Trend: calculateTrend(spO2Values),
   }
 }
 
 function getSpO2LowScore(metrics: WindowMetrics): RiskScoreResult {
-  if (metrics.spO2Mean < 92) {
+  if (metrics.spO2Recent30sMean < 92) {
     return {
       riskScore: 3,
-      triggerReasons: ['SpO2 最近視窗平均低於安全範圍'],
+      triggerReasons: ['SpO2 最近 30 秒平均低於安全範圍'],
     }
   }
 
@@ -305,11 +309,7 @@ export function resolveNextAlertStatus(params: {
         return nextActiveStatus
       }
 
-      if (currentSeverity - nextSeverity >= 2) {
-        return '恢復中'
-      }
-
-      return nextActiveStatus
+      return '恢復中'
     }
 
     return nextActiveStatus
@@ -335,7 +335,7 @@ export function determineAlertType(
     return null
   }
 
-  const hasSpO2Low = metrics.spO2Mean < 92
+  const hasSpO2Low = metrics.spO2Recent30sMean < 92
   const hasSpO2Drop = metrics.spO2Trend <= -3
   const hasHrIncrease = metrics.hrTrend >= 15
   const hasHrvDecrease = metrics.hrvTrend <= -20
