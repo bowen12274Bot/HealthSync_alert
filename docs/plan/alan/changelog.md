@@ -49,3 +49,24 @@
 
 ### 2. 打包與同步的串接
 - 修改 `packer.ts`，在順利將原始資料壓縮成 `periodic_health_records` 後，直接觸發 `scheduleSyncWithJitter()`，達成「5 秒收集 -> 10 分鐘打包 -> 隨機 0~10 分鐘內同步」的無縫資料流。
+
+## 2026-05-17 (階段四：伺服器資料保存)
+
+### 1. 後端資料庫模型擴充
+- **5 張全新模型**：在 `server/app/models/` 建立 `UserProfile`, `UserActivityBaseline`, `DailyHealthSummary`, `LongTermAlert`, `AlertHistory`。
+- **關聯與約束**：精準實作與 `user_accounts` 的外鍵關聯，並加入複合約束（如 `uq_user_account_activity_baseline`）與單一去重主鍵（如 `alert_id`）確保資料一致性。
+- **全域掛載**：更新 `database.py` 以自動匯入新模組，並於啟動時由 SQLAlchemy 生成資料表。
+
+### 2. 後端資料庫初始化播種 (Seeding)
+- **預設管理者建立**：在 `seed.py` 中，於建立管理員 `UserAccount` 後，利用 `db.flush()` 取得新建 ID。
+- **基準值注入**：為該帳號自動綁定一筆 `UserProfile` 以及對應活動等級 0~3 的四筆 `UserActivityBaseline` 紀錄（包含合理的目標心率、心率變異與血氧基準），作為後續健康預警判斷的可靠基準。
+
+### 3. 同步 API 擴充與預警資料冪等寫入
+- **Schema 升級**：在 `sync.py` 新增 `AlertSyncSchema` 與 `StatusHistoryItemSchema`，完全對接手機端送出的 JSON 結構。
+- **預警歷史儲存**：解析傳入的 `alerts` 陣列，自動判斷 `is_worsened` 狀態並透過 `json.dumps()` 儲存歷史軌跡。
+- **ON CONFLICT DO NOTHING**：運用 PostgreSQL 的冪等插入機制，以 `alert_id` 為去重條件，安全且高效地完成資料入庫。
+
+### 4. 容器化 E2E 測試驗證
+- **E2E 腳本升級**：於 `test_sync.py` 內建一組完整的模擬 `alert` 資料隨同 payload 測試發送。
+- **防爆重送測試**：模擬網路異常後的重送，並透過 DB `SELECT` 驗證 `AlertHistory` 不會產生重複寫入。
+- **完整性驗證**：檢查資料庫中是否存在 4 筆正確的 Baseline 以及寫入的預警是否判定為惡化（`is_worsened=True`）等預期數值，最終測試 100% 完美通過。

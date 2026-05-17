@@ -18,6 +18,11 @@ def create_db_tables() -> None:
     importlib.import_module("app.models.health_check_record")
     importlib.import_module("app.models.user_account")
     importlib.import_module("app.models.periodic_health_record")
+    importlib.import_module("app.models.user_profile")
+    importlib.import_module("app.models.user_activity_baseline")
+    importlib.import_module("app.models.daily_health_summary")
+    importlib.import_module("app.models.long_term_alert")
+    importlib.import_module("app.models.alert_history")
 
     Base.metadata.create_all(bind=engine)
 

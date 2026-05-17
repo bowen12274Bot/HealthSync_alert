@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -8,6 +8,7 @@ from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.auth_token import AuthToken
+    from app.models.user_profile import UserProfile
 
 
 class UserAccount(Base):
@@ -29,3 +30,9 @@ class UserAccount(Base):
         back_populates="user_account",
         cascade="all, delete-orphan",
     )
+    user_profile: Mapped[Optional["UserProfile"]] = relationship(
+        back_populates="user_account", 
+        uselist=False, 
+        cascade="all, delete-orphan",
+    )
+

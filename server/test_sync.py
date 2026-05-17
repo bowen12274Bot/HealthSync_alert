@@ -63,7 +63,33 @@ request_body = {
             "raw_data_payload": base64_payload
         }
     ],
-    "alerts": []
+    "alerts": [
+        {
+            "alert_id": "alert_test_20260517_001",
+            "alert_type": "spo2_risk",
+            "trigger_reason": "SpO2 sustained low in E2E test",
+            "initial_risk_score": 5,
+            "max_risk_score": 8,
+            "max_severity_level": "高度",
+            "first_occurred_at": (now - timedelta(minutes=5)).isoformat(),
+            "resolved_at": now.isoformat(),
+            "status_change_count": 2,
+            "status_history": [
+                {
+                    "status": "注意",
+                    "risk_score": 5,
+                    "status_time": (now - timedelta(minutes=5)).isoformat(),
+                    "status_description": "SpO2 偏低"
+                },
+                {
+                    "status": "已解除",
+                    "risk_score": 2,
+                    "status_time": now.isoformat(),
+                    "status_description": "數值恢復正常"
+                }
+            ]
+        }
+    ]
 }
 
 req_data = json.dumps(request_body).encode('utf-8')
@@ -145,4 +171,38 @@ with engine.connect() as conn:
     assert restored_records[0] == [0, 70, 40, 98.0, 0], "還原首筆數據不符合預期！"
     
     print("\n✅ 還原驗證成功！資料庫中的二進制 Byte 流與原始感測器數據 100% 吻合！")
+
+    # 3. 驗證預警歷史表 (AlertHistory)
+    alert_query = text("""
+        SELECT max_risk_score, duration, is_worsened, status 
+        FROM alert_histories 
+        WHERE alert_id = 'alert_test_20260517_001'
+    """)
+    alert_result = conn.execute(alert_query).fetchone()
+    
+    if not alert_result:
+        print("❌ 驗證失敗：資料庫找不到該筆預警歷史！")
+        exit(1)
+        
+    print(f"資料庫讀出預警最高風險分數: {alert_result[0]} (預期 8)")
+    print(f"資料庫讀出預警持續時間: {alert_result[1]} (預期 300 左右)")
+    print(f"資料庫讀出預警是否曾惡化: {alert_result[2]} (預期 True)")
+    print(f"資料庫讀出預警狀態: {alert_result[3]} (預期 resolved)")
+    
+    assert alert_result[0] == 8, "預警風險分數不符合預期！"
+    assert alert_result[2] is True, "預警惡化判定不符合預期！"
+    
+    print("✅ 預警寫入驗證成功！")
+    
+    # 4. 驗證 UserProfile 和 UserActivityBaseline seeding
+    baseline_query = text("SELECT COUNT(*) FROM user_activity_baselines")
+    baseline_count = conn.execute(baseline_query).scalar()
+    print(f"資料庫中活動基準筆數: {baseline_count} (預期 4)")
+    assert baseline_count >= 4, "❌ Seeding 活動基準筆數不足！"
+    
+    profile_query = text("SELECT name FROM user_profiles LIMIT 1")
+    profile_name = conn.execute(profile_query).scalar()
+    print(f"資料庫中使用者 Profile 名稱: {profile_name}")
+    assert profile_name is not None, "❌ Seeding 使用者 Profile 未成功寫入！"
+
     print("================== [E2E 測試成功] ==================")
