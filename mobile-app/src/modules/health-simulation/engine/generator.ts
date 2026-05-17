@@ -1,25 +1,36 @@
-import type { GenerationContext, RawHealthRecord } from '../types'
+import type { ActivityLevel, GenerationContext, RawHealthRecord } from '../types'
 
 // ─── 生理參數常數 ────────────────────────────────────────────────────────────
 
-/** 白天平均心率基準（bpm） */
-const HR_MEAN_DAY = 75
-/** 夜間平均心率基準（bpm） */
-const HR_MEAN_NIGHT = 58
-/** 心率隨機雜訊標準差（bpm） */
-const HR_NOISE_STD = 4
+const ACTIVITY_BASELINE_PROFILE: Record<
+  ActivityLevel,
+  {
+    targetHeartRate: number
+    targetHrv: number
+    targetSpO2: number
+  }
+> = {
+  0: { targetHeartRate: 72, targetHrv: 55, targetSpO2: 97 },
+  1: { targetHeartRate: 90, targetHrv: 45, targetSpO2: 97 },
+  2: { targetHeartRate: 115, targetHrv: 35, targetSpO2: 96 },
+  3: { targetHeartRate: 145, targetHrv: 25, targetSpO2: 96 },
+}
 
-/** 白天平均 HRV 基準（ms），與心率反相關 */
-const HRV_MEAN_DAY = 38
-/** 夜間平均 HRV 基準（ms） */
-const HRV_MEAN_NIGHT = 62
-/** HRV 隨機雜訊標準差（ms） */
-const HRV_NOISE_STD = 8
+const HR_ADAPT_RATE = 0.28
+const HRV_ADAPT_RATE = 0.24
+const SPO2_ADAPT_RATE = 0.18
+const HR_NOISE_STD = 1.2
+const HRV_NOISE_STD = 1.6
+const SPO2_NOISE_STD = 0.18
 
-/** 血氧平均值（%） */
-const SPO2_MEAN = 98.2
-/** 血氧隨機雜訊標準差（%） */
-const SPO2_NOISE_STD = 0.5
+interface GeneratorState {
+  heartRate: number
+  hrv: number
+  spO2: number
+  activityLevel: ActivityLevel
+}
+
+let currentState: GeneratorState | null = null
 
 // ─── 數學工具函式 ────────────────────────────────────────────────────────────
 
@@ -38,74 +49,91 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
-/**
- * 計算日夜節律相位（circadian phase）。
- *
- * 以凌晨 4 點為一天的谷底（trough），下午 4 點為高峰（peak），
- * 相位範圍：0 ~ 2π，供正弦波計算使用。
- */
-function getCircadianPhase(date: Date): number {
-  const totalMinutes = date.getHours() * 60 + date.getMinutes()
-  const troughMinutes = 4 * 60 // 凌晨 4 點為最低點
-  const minutesSinceTrough = (totalMinutes - troughMinutes + 1440) % 1440
-  return (minutesSinceTrough / 1440) * 2 * Math.PI
+function roundToOneDecimal(value: number): number {
+  return parseFloat(value.toFixed(1))
 }
 
 // ─── 各數值生成函式 ───────────────────────────────────────────────────────────
 
-/**
- * 根據日夜節律相位生成心率。
- * 白天較高、夜間較低，並疊加高斯雜訊使數值自然變動。
- */
-function generateHeartRate(phase: number): number {
-  const midMean = (HR_MEAN_DAY + HR_MEAN_NIGHT) / 2
-  const amplitude = (HR_MEAN_DAY - HR_MEAN_NIGHT) / 2
-  // 使用 sin(phase - π/2) 使凌晨 4 點為谷底、下午 4 點為高峰
-  const baseline = midMean + amplitude * Math.sin(phase - Math.PI / 2)
-  const raw = gaussianNoise(baseline, HR_NOISE_STD)
-  return Math.round(clamp(raw, 40, 180))
+function getInitialState(activityLevel: ActivityLevel): GeneratorState {
+  const target = ACTIVITY_BASELINE_PROFILE[activityLevel]
+
+  return {
+    heartRate: target.targetHeartRate,
+    hrv: target.targetHrv,
+    spO2: target.targetSpO2,
+    activityLevel,
+  }
 }
 
-/**
- * 根據當下心率生成 HRV。
- * HRV 與心率呈反相關：心率越高，HRV 越低。
- */
-function generateHRV(heartRate: number): number {
-  // 將心率正規化到 0~1，對應 HRV 從高到低
-  const hrNormalized = (heartRate - 40) / (180 - 40)
-  const baseMean = HRV_MEAN_NIGHT + (HRV_MEAN_DAY - HRV_MEAN_NIGHT) * hrNormalized
-  const raw = gaussianNoise(baseMean, HRV_NOISE_STD)
-  return Math.round(clamp(raw, 5, 120))
+function getWave(timestampMs: number, periodMs: number, amplitude: number): number {
+  return Math.sin((timestampMs / periodMs) * 2 * Math.PI) * amplitude
 }
 
-/**
- * 生成血氧濃度。
- * 正常情況下數值穩定在高點，加入微小雜訊模擬感測器誤差。
- */
-function generateSpO2(): number {
-  const raw = gaussianNoise(SPO2_MEAN, SPO2_NOISE_STD)
-  return parseFloat(clamp(raw, 85, 100).toFixed(1))
+function advanceState(context: GenerationContext, now: Date): GeneratorState {
+  if (currentState === null) {
+    currentState = getInitialState(context.activityLevel)
+  }
+
+  const target = ACTIVITY_BASELINE_PROFILE[context.activityLevel]
+  const nowMs = now.getTime()
+
+  const nextHeartRate = clamp(
+    currentState.heartRate
+      + (target.targetHeartRate - currentState.heartRate) * HR_ADAPT_RATE
+      + context.scenarioDelta.hrDelta
+      + getWave(nowMs, 30_000, 0.8)
+      + gaussianNoise(0, HR_NOISE_STD),
+    40,
+    180,
+  )
+  const nextHrv = clamp(
+    currentState.hrv
+      + (target.targetHrv - currentState.hrv) * HRV_ADAPT_RATE
+      + context.scenarioDelta.hrvDelta
+      + getWave(nowMs, 35_000, 0.8)
+      + gaussianNoise(0, HRV_NOISE_STD),
+    5,
+    120,
+  )
+  const nextSpO2 = clamp(
+    currentState.spO2
+      + (target.targetSpO2 - currentState.spO2) * SPO2_ADAPT_RATE
+      + context.scenarioDelta.spO2Delta
+      + getWave(nowMs, 45_000, 0.08)
+      + gaussianNoise(0, SPO2_NOISE_STD),
+    85,
+    100,
+  )
+
+  currentState = {
+    heartRate: context.pointOverride?.heartRateOverride ?? Math.round(nextHeartRate),
+    hrv: context.pointOverride?.hrvOverride ?? Math.round(nextHrv),
+    spO2: context.pointOverride?.spO2Override ?? roundToOneDecimal(nextSpO2),
+    activityLevel: context.activityLevel,
+  }
+
+  return currentState
+}
+
+export function resetHealthGenerator(activityLevel: ActivityLevel): void {
+  currentState = getInitialState(activityLevel)
 }
 
 /**
  * 生成一筆即時健康資料。
- * 生成器只負責根據輸入 context 產生資料，不持有執行時狀態。
+ * 生成器會保留 current_state，使劇本能逐筆推動資料趨勢。
  */
 export function generateHealthRecord(context: GenerationContext): RawHealthRecord {
   const now = new Date()
-  const phase = getCircadianPhase(now)
-  const scenario = context.scenarioOverride
-
-  const heartRate = scenario?.heartRateOverride ?? generateHeartRate(phase)
-  const hrv = scenario?.hrvOverride ?? generateHRV(heartRate)
-  const spO2 = scenario?.spO2Override ?? generateSpO2()
+  const state = advanceState(context, now)
 
   return {
     id: crypto.randomUUID(),
-    heartRate,
-    hrv,
-    spO2,
-    activityLevel: context.activityLevel,
+    heartRate: state.heartRate,
+    hrv: state.hrv,
+    spO2: state.spO2,
+    activityLevel: state.activityLevel,
     recordedAt: now.toISOString(),
   }
 }
