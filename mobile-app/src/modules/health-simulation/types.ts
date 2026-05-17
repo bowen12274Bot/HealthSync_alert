@@ -17,17 +17,38 @@ export interface RawHealthRecord {
 
 export interface GenerationContext {
   activityLevel: ActivityLevel
-  scenarioOverride: ScenarioOverride | null
+  scenarioDelta: ScenarioDelta
+  pointOverride: ScenarioOverride | null
 }
 
 /**
- * 情境覆蓋介面，用於未來注入異常劇本。
+ * 情境覆蓋介面，用於注入單點雜訊。
  * 提供的欄位將直接覆蓋時間模式生成的數值。
  */
 export interface ScenarioOverride {
   heartRateOverride?: number
   hrvOverride?: number
   spO2Override?: number
+}
+
+export interface ScenarioDelta {
+  hrDelta: number
+  hrvDelta: number
+  spO2Delta: number
+}
+
+export interface SimulationSegment extends ScenarioDelta {
+  name: string
+  durationSec: number
+  activityLevel: ActivityLevel
+  pointOverride?: ScenarioOverride
+}
+
+export interface SimulationScript {
+  id: string
+  name: string
+  initialActivityLevel: ActivityLevel
+  segments: readonly [SimulationSegment, ...SimulationSegment[]]
 }
 
 /**
