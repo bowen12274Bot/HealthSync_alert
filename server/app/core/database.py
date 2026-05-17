@@ -17,6 +17,7 @@ def create_db_tables() -> None:
     importlib.import_module("app.models.auth_token")
     importlib.import_module("app.models.health_check_record")
     importlib.import_module("app.models.user_account")
+    importlib.import_module("app.models.periodic_health_record")
 
     Base.metadata.create_all(bind=engine)
 
