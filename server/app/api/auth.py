@@ -12,8 +12,8 @@ from app.core.security import (
     hash_token,
     verify_password,
 )
-from app.models.auth_token import AuthToken
-from app.models.user_account import UserAccount
+from app.models.auth.auth_token import AuthToken
+from app.models.auth.user_account import UserAccount
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])

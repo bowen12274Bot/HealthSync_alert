@@ -39,6 +39,18 @@ const CREATE_REALTIME_ALERTS_TABLE_SQL = `
   );
 `
 
+/** 使用者活動基準表，保存當前使用者 baseline 快取，供模擬與預警分析共用 */
+const CREATE_ACTIVITY_BASELINE_PROFILE_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS activity_baseline_profile (
+    baseline_id      TEXT    PRIMARY KEY NOT NULL,
+    activity_level   INTEGER NOT NULL UNIQUE,
+    target_hr        INTEGER NOT NULL,
+    target_hrv       INTEGER NOT NULL,
+    target_spo2      INTEGER NOT NULL,
+    updated_at       TEXT    NOT NULL
+  );
+`
+
 /** 預警狀態歷史表，由 alert-engine 在狀態變化時追加寫入 */
 const CREATE_ALERT_STATUS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS alert_status (
@@ -88,6 +100,7 @@ export async function getDatabaseConnection(): Promise<SQLiteDBConnection> {
   await databaseConnection.open()
   await databaseConnection.execute(CREATE_LOCAL_RECORDS_TABLE_SQL)
   await databaseConnection.execute(CREATE_REALTIME_HEALTH_RECORDS_TABLE_SQL)
+  await databaseConnection.execute(CREATE_ACTIVITY_BASELINE_PROFILE_TABLE_SQL)
   await databaseConnection.execute(CREATE_REALTIME_ALERTS_TABLE_SQL)
   await databaseConnection.execute(CREATE_ALERT_STATUS_TABLE_SQL)
 

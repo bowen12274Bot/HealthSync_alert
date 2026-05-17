@@ -13,10 +13,8 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
 def load_model_modules() -> None:
-    # Load model modules so SQLAlchemy metadata is populated before create/drop runs.
-    importlib.import_module("app.models.auth_token")
-    importlib.import_module("app.models.health_check_record")
-    importlib.import_module("app.models.user_account")
+    # Import the models package once so all table mappings are registered in one place.
+    importlib.import_module("app.models")
 
 
 def create_db_tables() -> None:
