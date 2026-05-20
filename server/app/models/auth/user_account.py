@@ -7,8 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 if TYPE_CHECKING:
-    from app.models.auth_token import AuthToken
-    from app.models.user_profile import UserProfile
+    from app.models.auth.auth_token import AuthToken
+    from app.models.profile.user_profile import UserProfile
 
 
 class UserAccount(Base):
@@ -30,9 +30,8 @@ class UserAccount(Base):
         back_populates="user_account",
         cascade="all, delete-orphan",
     )
-    user_profile: Mapped[Optional["UserProfile"]] = relationship(
-        back_populates="user_account", 
-        uselist=False, 
+    user_profile: Mapped["UserProfile | None"] = relationship(
+        back_populates="user_account",
         cascade="all, delete-orphan",
+        uselist=False,
     )
-

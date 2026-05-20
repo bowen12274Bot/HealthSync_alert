@@ -32,8 +32,9 @@ async function tick(): Promise<void> {
  */
 export function startScheduler(): void {
   if (intervalId !== null) return
-  
-  // 啟動 5 秒高頻感應器生成
+  tick().catch((err: unknown) => {
+    console.error('[health-simulation] 寫入失敗：', err)
+  })
   intervalId = setInterval(() => {
     tick().catch((err: unknown) => {
       console.error('[health-simulation] 寫入失敗：', err)

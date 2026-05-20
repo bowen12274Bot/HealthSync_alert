@@ -15,8 +15,8 @@ const isRunning = ref(false)
 function applyScenario(id: SimulationScenarioId): void {
   const scenario = simulationScenarios.findById(id)
   currentScenarioId.value = scenario.id
-  simulationRuntime.setScenarioProvider(null)
-  simulationRuntime.setActivityLevelProvider(() => scenario.activityLevel)
+  simulationRuntime.setActiveScript(scenario)
+  simulationRuntime.resetHealthGenerator(scenario.initialActivityLevel)
 }
 
 export function startSimulationScenario(id: SimulationScenarioId): void {
@@ -28,6 +28,7 @@ export function startSimulationScenario(id: SimulationScenarioId): void {
 export function pauseSimulation(): void {
   simulationScheduler.stopDataGeneration()
   isRunning.value = false
+  simulationRuntime.setActiveScript(null)
 }
 
 export function ensureDefaultSimulationScenario(): void {

@@ -8,17 +8,20 @@ from app.api.health import router as health_router
 from app.api.sync import router as sync_router
 from app.core.config import settings
 from app.core.database import SessionLocal, create_db_tables
-from app.core.seed import seed_user_account
+from app.core.seed import seed_demo_data
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    create_db_tables()
-    db = SessionLocal()
-    try:
-        seed_user_account(db)
-    finally:
-        db.close()
+    if settings.auto_create_tables:
+        create_db_tables()
+
+    if settings.auto_seed_demo_data:
+        db = SessionLocal()
+        try:
+            seed_demo_data(db)
+        finally:
+            db.close()
     yield
 
 
@@ -36,6 +39,8 @@ app.add_middleware(
         "http://127.0.0.1",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
         "http://10.0.2.2",
         "http://10.0.2.2:5173",
         "capacitor://localhost",

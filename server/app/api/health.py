@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.health_check_record import HealthCheckRecord
+from app.models.monitoring.health_check_record import HealthCheckRecord
 
 
 router = APIRouter(tags=["health"])

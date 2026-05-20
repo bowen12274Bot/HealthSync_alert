@@ -4,6 +4,7 @@
 
 - [frontend-plan.md](./frontend-plan.md): 手機前端整體頁面規劃與主導航說明
 - [live-alert-display.md](./live-alert-display.md): 即時預警頁的顯示規則與導向方式
+- [login-flow.md](./login-flow.md): 登入與 baseline 初始化放行流程
 
 ## 文件分工
 
@@ -23,3 +24,11 @@
 - 即時模式與歷史模式入口
 - 上下區塊版面結構
 - 異常摘要區、摘要說明卡與預警資訊區
+
+### 3. `login-flow.md`
+
+說明：
+
+- 登入頁行為
+- baseline 初始化與放行條件
+- baseline 初始化失敗時的重試流程

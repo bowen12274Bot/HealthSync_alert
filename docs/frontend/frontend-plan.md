@@ -9,6 +9,7 @@
 相關子文件：
 
 - [即時預警顯示設計](./live-alert-display.md)
+- [登入流程設計](./login-flow.md)
 
 ## 2. 主導航
 

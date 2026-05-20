@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
@@ -9,21 +9,33 @@ const route = useRoute()
 const authStore = useAuthStore()
 const email = ref(import.meta.env.VITE_DEV_LOGIN_EMAIL ?? 'demo@healthsync.local')
 const password = ref(import.meta.env.VITE_DEV_LOGIN_PASSWORD ?? 'healthsync-demo')
-const isLoading = ref(false)
 const errorMessage = ref('')
+const canAutoRedirect = computed(() => authStore.isAuthenticated && !authStore.isLoginPending)
+
+watch(
+  canAutoRedirect,
+  async (isReadyToRedirect) => {
+    if (!isReadyToRedirect) {
+      return
+    }
+
+    const redirectPath = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+    await router.replace(redirectPath)
+  },
+  { immediate: true },
+)
 
 async function handleLogin() {
-  isLoading.value = true
   errorMessage.value = ''
 
   try {
     await authStore.login(email.value.trim(), password.value)
-    const redirectPath = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-    await router.replace(redirectPath)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '登入失敗'
   } finally {
-    isLoading.value = false
+    if (!authStore.isAuthenticated) {
+      authStore.resetLoginPhase()
+    }
   }
 }
 </script>
@@ -41,7 +53,13 @@ async function handleLogin() {
           <form class="login-form" @submit.prevent="handleLogin">
             <label class="field-group">
               <span>Email</span>
-              <input v-model="email" type="email" autocomplete="username" required />
+              <input
+                v-model="email"
+                type="email"
+                autocomplete="username"
+                :disabled="authStore.isLoginPending"
+                required
+              />
             </label>
 
             <label class="field-group">
@@ -50,14 +68,23 @@ async function handleLogin() {
                 v-model="password"
                 type="password"
                 autocomplete="current-password"
+                :disabled="authStore.isLoginPending"
                 required
               />
             </label>
 
-            <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+            <div class="message-slot">
+              <p
+                class="status-message"
+                :class="{ 'is-visible': authStore.loginStatusMessage.length > 0 }"
+              >
+                {{ authStore.loginStatusMessage || ' ' }}
+              </p>
+              <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+            </div>
 
-            <button class="login-button" type="submit" :disabled="isLoading">
-              {{ isLoading ? '登入中...' : '登入' }}
+            <button class="login-button" type="submit" :disabled="authStore.isLoginPending">
+              {{ authStore.isLoginPending ? '登入中...' : '登入' }}
             </button>
           </form>
         </section>
@@ -162,6 +189,26 @@ async function handleLogin() {
   color: #b22a2a;
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+.message-slot {
+  min-height: 52px;
+}
+
+.status-message {
+  margin: 0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(44, 104, 174, 0.1);
+  color: #2c68ae;
+  font-size: 0.9rem;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.status-message.is-visible {
+  opacity: 1;
 }
 
 .login-button {
