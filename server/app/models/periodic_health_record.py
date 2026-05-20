@@ -31,6 +31,7 @@ class PeriodicHealthRecord(Base):
     
     dominant_activity_level: Mapped[int] = mapped_column(Integer, nullable=False)
     sample_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    steps: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     
     raw_data_payload: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
 

@@ -92,11 +92,35 @@ request_body = {
     ]
 }
 
+print("=== [E2E 測試] 正在登入以取得 JWT Token ===")
+login_body = {
+    "email": "demo@healthsync.local",
+    "password": "healthsync-demo"
+}
+login_data = json.dumps(login_body).encode('utf-8')
+login_req = urllib.request.Request(
+    "http://localhost:8000/auth/login",
+    data=login_data,
+    headers={"Content-Type": "application/json"}
+)
+
+try:
+    with urllib.request.urlopen(login_req) as login_res:
+        login_res_data = json.loads(login_res.read().decode('utf-8'))
+        token = login_res_data["access_token"]
+        print("✅ 成功取得 JWT Token！")
+except Exception as e:
+    print(f"❌ 登入失敗: {e}")
+    exit(1)
+
 req_data = json.dumps(request_body).encode('utf-8')
 req = urllib.request.Request(
     "http://localhost:8000/sync/batch",
     data=req_data,
-    headers={"Content-Type": "application/json"}
+    headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
 )
 
 try:
