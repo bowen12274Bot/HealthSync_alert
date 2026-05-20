@@ -72,8 +72,8 @@ def extract_bearer_token(authorization: str | None) -> str:
 
 
 def get_authenticated_session(
-    authorization: AuthorizationHeader,
     db: DbSession,
+    authorization: AuthorizationHeader = None,
 ) -> AuthenticatedSession:
     token = extract_bearer_token(authorization)
     auth_token = db.query(AuthToken).filter(AuthToken.token_hash == hash_token(token)).first()
