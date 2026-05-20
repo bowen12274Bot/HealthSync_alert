@@ -195,7 +195,7 @@ with engine.connect() as conn:
     print("✅ 預警寫入驗證成功！")
     
     # 4. 驗證 UserProfile 和 UserActivityBaseline seeding
-    baseline_query = text("SELECT COUNT(*) FROM user_activity_baselines")
+    baseline_query = text("SELECT COUNT(*) FROM activity_baseline_profile")
     baseline_count = conn.execute(baseline_query).scalar()
     print(f"資料庫中活動基準筆數: {baseline_count} (預期 4)")
     assert baseline_count >= 4, "❌ Seeding 活動基準筆數不足！"
