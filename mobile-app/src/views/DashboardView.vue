@@ -303,22 +303,26 @@ function openSimulationView(): void {
 }
 
 function openAlertView(): void {
-  void router.push({ name: 'alert-display' })
+  if (!isHealthy.value) {
+    void router.push({ name: 'alert-display-live' })
+  }
 }
 </script>
 
 <template>
   <AppShell title="儀表板" :show-profile-shortcut="true">
     <section class="dashboard-grid">
-      <button
+      <component
+        :is="isHealthy ? 'div' : 'button'"
         class="status-card"
         :class="{
           'is-healthy': isHealthy,
+          'is-clickable': !isHealthy,
           'is-warning': alertLevel === 'warning',
           'is-critical': alertLevel === 'critical',
           'is-severe': alertLevel === 'severe',
         }"
-        type="button"
+        :type="isHealthy ? undefined : 'button'"
         @click="openAlertView"
       >
         <div class="status-mark" :class="{ 'is-healthy': isHealthy, [alertLevel]: !isHealthy }"></div>
@@ -331,7 +335,7 @@ function openAlertView(): void {
           <span>{{ alertDuration.label }}</span>
           <strong>{{ alertDuration.value }}</strong>
         </div>
-      </button>
+      </component>
 
       <section class="metric-grid">
         <article class="metric-card heart">
@@ -404,11 +408,14 @@ function openAlertView(): void {
   gap: 14px;
   align-items: center;
   text-align: left;
-  cursor: pointer;
   transition: all 0.3s ease;
 }
 
-.status-card:hover {
+.status-card.is-clickable {
+  cursor: pointer;
+}
+
+.status-card.is-clickable:hover {
   transform: translateY(-2px);
   box-shadow: 0 22px 48px rgba(35, 63, 103, 0.15);
 }

@@ -2,69 +2,179 @@
 import AppShell from '@/components/AppShell.vue'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAlertStatus } from '@/composables/useAlertStatus'
+import { useLatestHealthRecord } from '@/composables/useLatestHealthRecord'
 
 const route = useRoute()
+const { alertData, isHealthy, alertLevel, alertTitle, alertSubtitle, alertDuration } =
+  useAlertStatus()
+const { heartRate, hrv, spO2 } = useLatestHealthRecord()
 
 const isHistoryMode = computed(() => route.meta.alertMode === 'history')
 const pageTitle = computed(() => (isHistoryMode.value ? '預警詳情' : '即時預警'))
-const statusChipLabel = computed(() => (isHistoryMode.value ? '已解除' : '警戒'))
-const alertInfoItems = computed(() =>
-  isHistoryMode.value
-    ? [
-        { label: '預警類型', value: '血氧風險' },
-        { label: '最終狀態', value: '已解除' },
-        { label: '最高等級', value: '高度' },
-        { label: '開始發生時間', value: '2025/05/14 14:32:18' },
-        { label: '解除時間', value: '2025/05/14 14:41:09' },
-      ]
-    : [
-        { label: '預警類型', value: '血氧風險' },
-        { label: '目前狀態', value: '警戒' },
-        { label: '目前風險等級', value: '高度' },
-        { label: '最高等級', value: '高度' },
-        { label: '開始發生時間', value: '2025/05/14 14:32:18' },
-        { label: '更新時間', value: '2025/05/14 14:36:42' },
-      ],
-)
+
+// ── 嚴重程度對應標籤 ──────────────────────────────────────
+const statusChipLabel = computed(() => {
+  if (isHistoryMode.value) return '已解除'
+  switch (alertLevel.value) {
+    case 'warning':
+      return '觀察中'
+    case 'critical':
+      return '警戒'
+    case 'severe':
+      return '高度警戒'
+    default:
+      return '正常'
+  }
+})
+
+// ── 預警類型中文名稱 ──────────────────────────────────────
+const alertTypeName = computed(() => {
+  switch (alertData.value.alertType) {
+    case 'spo2_risk':
+      return '血氧風險'
+    case 'physiological_stress':
+      return '生理壓力'
+    case 'combined_physiological_risk':
+      return '複合生理風險'
+    default:
+      return '生理異常'
+  }
+})
+
+// ── 格式化時間 ────────────────────────────────────────────
+function formatTime(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleString('zh-TW', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+}
+
+// ── 風險分數對應文字 ──────────────────────────────────────
+const riskScoreLabel = computed(() => {
+  const score = alertData.value.riskScore
+  if (score <= 2) return '低'
+  if (score <= 4) return '中'
+  if (score <= 6) return '高度'
+  return '極高'
+})
+
+// ── 生命表格項目（即時模式）────────────────────────────────
+const alertInfoItems = computed(() => {
+  if (isHistoryMode.value) {
+    return [
+      { label: '預警類型', value: alertTypeName.value },
+      { label: '最終狀態', value: alertData.value.status ?? '已解除' },
+      { label: '最高風險評分', value: `${alertData.value.riskScore} / 9 分` },
+      { label: '開始發生時間', value: formatTime(alertData.value.detectionStartTime) },
+      { label: '解除時間', value: formatTime(alertData.value.lastResolvedTime) },
+    ]
+  }
+  return [
+    { label: '預警類型', value: alertTypeName.value },
+    { label: '目前狀態', value: alertData.value.status ?? '觀察中' },
+    { label: '風險評分', value: `${alertData.value.riskScore} / 9 分（${riskScoreLabel.value}）` },
+    { label: '開始發生時間', value: formatTime(alertData.value.detectionStartTime) },
+    { label: '首次觸發時間', value: formatTime(alertData.value.firstOccurredAt) },
+  ]
+})
+
+// ── 心率趨勢（簡易判斷） ──────────────────────────────────
+const hrTrendLabel = computed(() => {
+  const hr = Number(heartRate.value)
+  if (isNaN(hr)) return '—'
+  if (hr > 100) return '偏高 ↑'
+  if (hr < 50) return '偏低 ↓'
+  return '正常'
+})
+
+const spO2TrendLabel = computed(() => {
+  const val = Number(spO2.value)
+  if (isNaN(val)) return '—'
+  if (val < 90) return '持續下降 ↓'
+  if (val < 95) return '略低 ↓'
+  return '正常'
+})
+
+const hrvTrendLabel = computed(() => {
+  const val = Number(hrv.value)
+  if (isNaN(val)) return '—'
+  if (val < 20) return '下降 ↓'
+  if (val > 120) return '偏高 ↑'
+  return '正常'
+})
 </script>
 
 <template>
   <AppShell :title="pageTitle">
     <section class="alert-display-layout">
-      <section class="alert-hero">
+
+      <!-- ── 上半段：警報橫幅 + 指標卡 + 觸發原因 ── -->
+      <section class="alert-hero" :class="alertLevel">
         <div class="alert-banner">
-          <div class="alert-icon">!</div>
-          <div>
-            <p class="section-label warning">發現異常指標</p>
-            <strong>多項生理指標異常</strong>
-            <span>目前狀態與低活動情境不符</span>
+          <div class="alert-icon" :class="alertLevel">
+            <span v-if="isHealthy">✓</span>
+            <span v-else>!</span>
           </div>
-          <div class="pending-tag">{{ statusChipLabel }}</div>
+          <div>
+            <p class="section-label" :class="alertLevel">
+              {{ isHealthy ? '健康狀態良好' : '發現異常指標' }}
+            </p>
+            <strong>{{ alertTitle }}</strong>
+            <span>{{ alertSubtitle }}</span>
+          </div>
+          <div class="pending-tag" :class="alertLevel">{{ statusChipLabel }}</div>
         </div>
 
+        <!-- 即時指標卡 -->
         <div class="indicator-grid">
           <article class="indicator-card heart">
             <p>HR</p>
-            <strong>112 bpm</strong>
-            <span>上升 ↑</span>
+            <strong>{{ heartRate }} <small>bpm</small></strong>
+            <span>{{ hrTrendLabel }}</span>
           </article>
           <article class="indicator-card oxygen">
             <p>SpO₂</p>
-            <strong>90%</strong>
-            <span>持續下降 ↓</span>
+            <strong>{{ spO2 }}<small>%</small></strong>
+            <span>{{ spO2TrendLabel }}</span>
           </article>
           <article class="indicator-card hrv">
             <p>HRV</p>
-            <strong>28 ms</strong>
-            <span>下降 ↓</span>
+            <strong>{{ hrv }} <small>ms</small></strong>
+            <span>{{ hrvTrendLabel }}</span>
           </article>
         </div>
 
-        <div class="summary-card">
-          近一分鐘資料顯示，在低活動狀態下出現心率上升、心率變異下降與血氧持續下降，因此形成即時預警。
+        <!-- 持續時間膠囊 -->
+        <div class="duration-pill" :class="alertLevel">
+          <span>{{ alertDuration.label }}</span>
+          <strong>{{ alertDuration.value }}</strong>
+        </div>
+
+        <!-- 觸發原因列表（有預警時才顯示） -->
+        <div v-if="!isHealthy && alertData.triggerReasons.length > 0" class="reason-block">
+          <p class="reason-title">觸發原因</p>
+          <ul class="reason-list">
+            <li v-for="reason in alertData.triggerReasons" :key="reason">
+              {{ reason }}
+            </li>
+          </ul>
+        </div>
+
+        <!-- 健康說明（無警報時顯示） -->
+        <div v-else-if="isHealthy" class="summary-card healthy">
+          目前所有生理指標均在正常範圍內，系統持續監測中。如出現異常，將即時通知您。
         </div>
       </section>
 
+      <!-- ── 下半段：詳細資訊表格 ── -->
       <section class="alert-info">
         <dl class="alert-meta">
           <div v-for="item in alertInfoItems" :key="item.label">
@@ -73,6 +183,7 @@ const alertInfoItems = computed(() =>
           </div>
         </dl>
       </section>
+
     </section>
   </AppShell>
 </template>
@@ -83,6 +194,7 @@ const alertInfoItems = computed(() =>
   gap: 0;
 }
 
+/* ── Hero 區塊 ── */
 .alert-hero,
 .alert-info {
   border-radius: 24px;
@@ -92,16 +204,37 @@ const alertInfoItems = computed(() =>
 }
 
 .alert-hero {
-  background:
-    linear-gradient(180deg, rgba(255, 182, 113, 0.28) 0%, rgba(255, 244, 233, 0.94) 100%),
-    rgba(255, 255, 255, 0.9);
   display: grid;
   gap: 14px;
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
   padding-bottom: 32px;
+
+  /* 預設（健康）配色 */
+  background:
+    linear-gradient(180deg, rgba(97, 198, 85, 0.15) 0%, rgba(240, 255, 240, 0.94) 100%),
+    rgba(255, 255, 255, 0.9);
 }
 
+.alert-hero.warning {
+  background:
+    linear-gradient(180deg, rgba(255, 193, 7, 0.22) 0%, rgba(255, 248, 225, 0.94) 100%),
+    rgba(255, 255, 255, 0.9);
+}
+
+.alert-hero.critical {
+  background:
+    linear-gradient(180deg, rgba(255, 152, 0, 0.22) 0%, rgba(255, 244, 230, 0.94) 100%),
+    rgba(255, 255, 255, 0.9);
+}
+
+.alert-hero.severe {
+  background:
+    linear-gradient(180deg, rgba(244, 67, 54, 0.2) 0%, rgba(255, 235, 238, 0.94) 100%),
+    rgba(255, 255, 255, 0.9);
+}
+
+/* ── Info 區塊 ── */
 .alert-info {
   position: relative;
   margin-top: -18px;
@@ -123,6 +256,7 @@ const alertInfoItems = computed(() =>
   border-top: 1px solid rgba(22, 50, 80, 0.08);
 }
 
+/* ── Banner ── */
 .alert-banner {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -130,39 +264,60 @@ const alertInfoItems = computed(() =>
   align-items: start;
 }
 
+/* ── Icon ── */
 .alert-icon {
   width: 42px;
   height: 42px;
   border-radius: 16px;
   display: grid;
   place-items: center;
-  background: linear-gradient(180deg, #f59d2a 0%, #ef7e0f 100%);
   color: #fff;
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   font-weight: 800;
+  background: linear-gradient(180deg, #62c655 0%, #37a249 100%);
+  box-shadow: 0 4px 12px rgba(98, 198, 85, 0.35);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
 }
 
+.alert-icon.warning {
+  background: linear-gradient(180deg, #ffc107 0%, #ff9800 100%);
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.35);
+}
+
+.alert-icon.critical {
+  background: linear-gradient(180deg, #ff9800 0%, #f44336 100%);
+  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+}
+
+.alert-icon.severe {
+  background: linear-gradient(180deg, #f44336 0%, #c62828 100%);
+  box-shadow: 0 4px 12px rgba(198, 40, 40, 0.5);
+  animation: pulse-severe 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse-severe {
+  0%, 100% { box-shadow: 0 4px 12px rgba(198, 40, 40, 0.5); }
+  50%       { box-shadow: 0 6px 20px rgba(198, 40, 40, 0.75); }
+}
+
+/* ── Section label ── */
 .section-label {
   margin: 0 0 6px;
-  color: #db7b12;
   font-size: 0.8rem;
   font-weight: 700;
+  color: #37a249;
 }
 
-.alert-banner strong,
-.alert-meta dd {
-  color: #163250;
-}
+.section-label.warning  { color: #db7b12; }
+.section-label.critical { color: #c94a00; }
+.section-label.severe   { color: #b71c1c; }
 
+/* ── Banner text ── */
 .alert-banner strong {
   display: block;
   font-size: 1.18rem;
   line-height: 1.25;
-}
-
-.alert-banner span,
-.alert-meta dt {
-  color: #6d8094;
+  color: #163250;
 }
 
 .alert-banner span {
@@ -170,17 +325,97 @@ const alertInfoItems = computed(() =>
   margin-top: 4px;
   font-size: 0.82rem;
   line-height: 1.4;
+  color: #6d8094;
 }
 
+/* ── Status chip ── */
 .pending-tag {
   border-radius: 999px;
   padding: 7px 11px;
-  background: rgba(241, 127, 17, 0.12);
-  color: #d4720f;
   font-size: 0.8rem;
   font-weight: 700;
+  background: rgba(55, 162, 73, 0.12);
+  color: #2f8c46;
+  white-space: nowrap;
 }
 
+.pending-tag.warning  { background: rgba(241, 127, 17, 0.12); color: #d4720f; }
+.pending-tag.critical { background: rgba(244, 67, 54, 0.1);   color: #c33000; }
+.pending-tag.severe   { background: rgba(198, 40, 40, 0.14);  color: #b71c1c; }
+
+/* ── Duration pill ── */
+.duration-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 0.84rem;
+  width: fit-content;
+  background: rgba(55, 162, 73, 0.1);
+  color: #2f8c46;
+}
+
+.duration-pill span { font-weight: 600; }
+.duration-pill strong { font-size: 1rem; font-weight: 700; }
+
+.duration-pill.warning  { background: rgba(255, 152, 0, 0.1); color: #d4720f; }
+.duration-pill.critical { background: rgba(244, 67, 54, 0.08); color: #c33000; }
+.duration-pill.severe   { background: rgba(198, 40, 40, 0.1);  color: #b71c1c; }
+
+/* ── 觸發原因 ── */
+.reason-block {
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.reason-title {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #6d8094;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.reason-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.reason-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: #35536f;
+}
+
+.reason-list li::before {
+  content: '•';
+  font-size: 1rem;
+  line-height: 1.35;
+  color: #e65100;
+  flex-shrink: 0;
+}
+
+/* ── 健康說明卡片 ── */
+.summary-card {
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.summary-card.healthy { color: #2e6b3a; }
+
+/* ── 指標卡格 ── */
 .indicator-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -189,9 +424,9 @@ const alertInfoItems = computed(() =>
 
 .indicator-card {
   border-radius: 20px;
-  padding: 14px 14px;
+  padding: 14px;
   display: grid;
-  gap: 8px;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.86);
 }
 
@@ -206,9 +441,19 @@ const alertInfoItems = computed(() =>
 }
 
 .indicator-grid strong {
-  font-size: 1.02rem;
+  font-size: 1.05rem;
   line-height: 1.2;
-  font-weight: 650;
+  font-weight: 700;
+  color: #163250;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.indicator-grid strong small {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #6d8094;
 }
 
 .indicator-grid span {
@@ -217,27 +462,11 @@ const alertInfoItems = computed(() =>
   line-height: 1.35;
 }
 
-.heart p {
-  color: #f1645c;
-}
+.heart p  { color: #f1645c; }
+.oxygen p { color: #3374d8; }
+.hrv p    { color: #34a56d; }
 
-.oxygen p {
-  color: #3374d8;
-}
-
-.hrv p {
-  color: #34a56d;
-}
-
-.summary-card {
-  border-radius: 18px;
-  padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.8);
-  color: #35536f;
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
+/* ── Meta 表格 ── */
 .alert-meta {
   margin: 0;
   display: grid;
@@ -257,5 +486,16 @@ const alertInfoItems = computed(() =>
 .alert-meta dt,
 .alert-meta dd {
   margin: 0;
+}
+
+.alert-meta dt {
+  font-size: 0.8rem;
+  color: #6d8094;
+}
+
+.alert-meta dd {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #163250;
 }
 </style>
