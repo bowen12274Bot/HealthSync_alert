@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDatabaseConnection } from '@/db/sqlite'
 import { encode } from '@msgpack/msgpack'
+// @ts-expect-error: zstd-codec has no TypeScript declarations
 import { ZstdCodec } from 'zstd-codec'
 import type { RawHealthRecord } from '../types'
 import { scheduleSyncWithJitter } from './sync_client'
@@ -29,7 +31,7 @@ function calculateMode(arr: number[]): number {
   if (arr.length === 0) return 0
   const counts = new Map<number, number>()
   let maxCount = 0
-  let mode = arr[0]
+  let mode = arr[0] ?? 0
   for (const num of arr) {
     const c = (counts.get(num) || 0) + 1
     counts.set(num, c)
@@ -66,8 +68,7 @@ export async function packPendingWindows(): Promise<void> {
     return // 沒有舊資料需要打包
   }
 
-  // 這裡需要用 TS 重新精確分群，因為 SQLite 的 substr 只是一個粗略的 10 分鐘切割（依賴字串長度）
-  // 為了精確，我們直接抓取所有未打包的即時紀錄
+  // 2. 為了精確，我們直接抓取所有未打包的即時紀錄
   const unPackedQuery = await db.query(`
     SELECT r.id, r.heart_rate, r.hrv, r.sp_o2, r.activity_level, r.recorded_at
     FROM realtime_health_records r
@@ -85,7 +86,7 @@ export async function packPendingWindows(): Promise<void> {
     heartRate: Number(row.heart_rate),
     hrv: Number(row.hrv),
     spO2: Number(row.sp_o2),
-    activityLevel: Number(row.activity_level),
+    activityLevel: Number(row.activity_level) as any, // 轉換為 ActivityLevel 列舉
     recordedAt: String(row.recorded_at),
   }))
 
@@ -104,17 +105,64 @@ export async function packPendingWindows(): Promise<void> {
 
   // 排序視窗 (由舊到新)
   const sortedWindows = Array.from(groups.keys()).sort((a, b) => a - b)
+  const processedWindows = new Set<number>()
 
   for (const windowStartTs of sortedWindows) {
-    const records = groups.get(windowStartTs)!
-    
-    // 若樣本數不足 6 筆，暫時略過（保留給未來向後合併邏輯）
-    if (records.length < 6) {
+    if (processedWindows.has(windowStartTs)) {
       continue
     }
 
+    const records = groups.get(windowStartTs)!
+    const combinedRecords = [...records]
+    const windowsToMerge: number[] = []
+    let hitActiveWindow = false
+
+    // 若樣本數不足 6 筆，進行向後合併邏輯
+    if (combinedRecords.length < 6) {
+      // 嘗試尋找並合併後續最多 2 個舊視窗
+      const slot1 = windowStartTs + WINDOW_SIZE_MS
+      if (slot1 === currentWindowStartTs) {
+        hitActiveWindow = true
+      } else if (groups.has(slot1)) {
+        combinedRecords.push(...groups.get(slot1)!)
+        windowsToMerge.push(slot1)
+      }
+
+      if (combinedRecords.length < 6 && !hitActiveWindow) {
+        const slot2 = windowStartTs + 2 * WINDOW_SIZE_MS
+        if (slot2 === currentWindowStartTs) {
+          hitActiveWindow = true
+        } else if (groups.has(slot2)) {
+          combinedRecords.push(...groups.get(slot2)!)
+          windowsToMerge.push(slot2)
+        }
+      }
+
+      // 檢查合併後結果
+      if (combinedRecords.length < 6) {
+        if (hitActiveWindow) {
+          // 碰到了目前仍在寫入的現在窗，先不處理，保留至下一週期
+          console.log(`[health-packer] 視窗 ${new Date(windowStartTs).toISOString()} 樣本不足且已觸及現在窗，暫保留。`)
+          continue
+        } else {
+          // 已經向後搜尋 2 個舊窗仍不足 6 筆，執行捨棄 (物理刪除該最舊視窗)
+          const wStartIso = new Date(windowStartTs).toISOString()
+          const wEndIso = new Date(windowStartTs + WINDOW_SIZE_MS - 1).toISOString()
+          console.warn(`[health-packer] 視窗 ${wStartIso} 合併後樣本數仍為 ${combinedRecords.length} (< 6)，執行捨棄最舊窗`)
+          await db.run(
+            `DELETE FROM realtime_health_records WHERE recorded_at >= ? AND recorded_at <= ?`,
+            [wStartIso, wEndIso]
+          )
+          processedWindows.add(windowStartTs)
+          continue
+        }
+      }
+    }
+
+    // 進行壓縮與打包
+    const lastWindowStartTs = windowsToMerge.length > 0 ? (windowsToMerge[windowsToMerge.length - 1] ?? windowStartTs) : windowStartTs
     const windowStart = new Date(windowStartTs)
-    const windowEnd = new Date(windowStartTs + WINDOW_SIZE_MS - 1)
+    const windowEnd = new Date(lastWindowStartTs + WINDOW_SIZE_MS - 1)
 
     let sumHr = 0, minHr = Infinity, maxHr = -Infinity
     let sumHrv = 0
@@ -124,7 +172,7 @@ export async function packPendingWindows(): Promise<void> {
     // Payload 格式: [[offset_sec, hr, hrv, spo2, act], ...]
     const rawDataArray: any[] = []
 
-    for (const r of records) {
+    for (const r of combinedRecords) {
       sumHr += r.heartRate
       if (r.heartRate < minHr) minHr = r.heartRate
       if (r.heartRate > maxHr) maxHr = r.heartRate
@@ -140,7 +188,7 @@ export async function packPendingWindows(): Promise<void> {
       rawDataArray.push([offsetSec, r.heartRate, r.hrv, r.spO2, r.activityLevel])
     }
 
-    const N = records.length
+    const N = combinedRecords.length
     const avgHr = Math.round(sumHr / N)
     const avgHrv = Math.round(sumHrv / N)
     const avgSpo2 = Math.round((sumSpo2 / N) * 100) / 100
@@ -173,6 +221,12 @@ export async function packPendingWindows(): Promise<void> {
         new Date().toISOString()
       ]
     )
+
+    // 標記 these 視窗為已處理，避免重複打包
+    processedWindows.add(windowStartTs)
+    for (const w of windowsToMerge) {
+      processedWindows.add(w)
+    }
   }
 
   // 成功完成壓縮打包後，觸發一次隨機延遲的同步作業
@@ -182,4 +236,3 @@ export async function packPendingWindows(): Promise<void> {
     )
   }
 }
-

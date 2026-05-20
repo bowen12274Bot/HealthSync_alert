@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.models.alert_history import AlertHistory
 from app.models.periodic_health_record import PeriodicHealthRecord
 from app.models.auth.user_account import UserAccount
+from app.api.auth import get_authenticated_session, AuthenticatedSession
 
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -31,6 +32,7 @@ class PeriodicHealthRecordSchema(BaseModel):
     min_spo2: float
     dominant_activity_level: int
     sample_count: int
+    steps: int = Field(0, description="Steps count during this window")
     raw_data_payload: Optional[str] = Field(
         None, description="Base64 encoded binary data (MsgPack + ZSTD)"
     )
@@ -72,18 +74,17 @@ class SyncBatchResponse(BaseModel):
 
 
 @router.post("/batch", response_model=SyncBatchResponse)
-def sync_batch(request: SyncBatchRequest, db: DbSession):
+def sync_batch(
+    request: SyncBatchRequest,
+    db: DbSession,
+    session: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+):
     server_received_at = datetime.now()
     accepted_health_record_count = 0
     accepted_alert_count = 0
 
     try:
-        # TODO: 目前以第一筆帳號作為 user_account_id 的解析來源。
-        # 未來應改為從 JWT Token 或 user_id 對應表中查詢正確的 user_account.id。
-        user_account = db.query(UserAccount).first()
-        if not user_account:
-            raise ValueError("No user account found in the system.")
-        user_account_id = user_account.id
+        user_account_id = session.user.id
 
         # Process Periodic Health Records
         if request.periodic_health_records:
@@ -93,7 +94,7 @@ def sync_batch(request: SyncBatchRequest, db: DbSession):
                 raw_bytes = None
                 if record.raw_data_payload:
                     try:
-                        raw_bytes = base64.b64decode(record.raw_data_payload)
+                        raw_bytes = base64.b64decode(record.raw_data_payload, validate=True)
                     except Exception as e:
                         # Log error but raise to rollback transaction
                         raise ValueError(f"Invalid Base64 in raw_data_payload: {e}")
@@ -111,9 +112,9 @@ def sync_batch(request: SyncBatchRequest, db: DbSession):
                     "min_spo2": record.min_spo2,
                     "dominant_activity_level": record.dominant_activity_level,
                     "sample_count": record.sample_count,
+                    "steps": record.steps,
                     "raw_data_payload": raw_bytes,
                 })
-
             # Idempotent bulk insert (Upsert/Do nothing on conflict)
             stmt = insert(PeriodicHealthRecord).values(records_to_insert)
             stmt = stmt.on_conflict_do_nothing(
@@ -121,6 +122,8 @@ def sync_batch(request: SyncBatchRequest, db: DbSession):
             )
             result = db.execute(stmt)
             accepted_health_record_count = result.rowcount
+            if accepted_health_record_count == -1:
+                accepted_health_record_count = len(records_to_insert)
 
         # Process alerts
         if request.alerts:
@@ -163,6 +166,8 @@ def sync_batch(request: SyncBatchRequest, db: DbSession):
             )
             result = db.execute(stmt)
             accepted_alert_count = result.rowcount
+            if accepted_alert_count == -1:
+                accepted_alert_count = len(alerts_to_insert)
         else:
             accepted_alert_count = 0
 
@@ -186,7 +191,7 @@ def sync_batch(request: SyncBatchRequest, db: DbSession):
         db.rollback()
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error_code": "DATABASE_ERROR", "message": "Failed to save sync data"}
+            content={"success": False, "error_code": "DATABASE_ERROR", "message": f"Failed to save sync data: {str(e)}"}
         )
     except Exception as e:
         db.rollback()

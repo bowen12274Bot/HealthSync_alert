@@ -85,6 +85,20 @@ const CREATE_ALERT_STATUS_TABLE_SQL = `
   );
 `
 
+/** 同步紀錄表，保存本地與伺服器的同步任務歷史 */
+const CREATE_SYNC_RECORD_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS sync_record (
+    sync_id          TEXT    PRIMARY KEY NOT NULL,
+    sync_start_time  TEXT    NOT NULL,
+    sync_end_time    TEXT,
+    sync_status      TEXT    NOT NULL,
+    sync_data_range  TEXT,
+    sync_data_count  INTEGER NOT NULL,
+    failure_reason   TEXT,
+    retry_count      INTEGER DEFAULT 0
+  );
+`
+
 let sqliteConnection: SQLiteConnection | null = null
 let databaseConnection: SQLiteDBConnection | null = null
 
@@ -125,6 +139,7 @@ export async function getDatabaseConnection(): Promise<SQLiteDBConnection> {
   await databaseConnection.execute(CREATE_ACTIVITY_BASELINE_PROFILE_TABLE_SQL)
   await databaseConnection.execute(CREATE_REALTIME_ALERTS_TABLE_SQL)
   await databaseConnection.execute(CREATE_ALERT_STATUS_TABLE_SQL)
+  await databaseConnection.execute(CREATE_SYNC_RECORD_TABLE_SQL)
 
   return databaseConnection
 }
