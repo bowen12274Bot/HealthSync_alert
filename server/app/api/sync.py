@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.alert_history import AlertHistory
 from app.models.periodic_health_record import PeriodicHealthRecord
-from app.models.user_account import UserAccount
+from app.models.auth.user_account import UserAccount
 
 
 router = APIRouter(prefix="/sync", tags=["sync"])
