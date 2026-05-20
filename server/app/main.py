@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
+from app.api.sync import router as sync_router
 from app.core.config import settings
 from app.core.database import SessionLocal, create_db_tables
 from app.core.seed import seed_demo_data
@@ -57,3 +58,4 @@ def read_root() -> dict[str, str]:
 
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(sync_router)

@@ -25,6 +25,27 @@ const CREATE_REALTIME_HEALTH_RECORDS_TABLE_SQL = `
   );
 `
 
+/** 週期健康紀錄表，由 packer 模組每 10 分鐘聚合寫入一次，供同步使用 */
+const CREATE_PERIODIC_HEALTH_RECORDS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS periodic_health_records (
+    id TEXT PRIMARY KEY NOT NULL,
+    window_start TEXT NOT NULL,
+    window_end TEXT NOT NULL,
+    avg_hr INTEGER NOT NULL,
+    min_hr INTEGER NOT NULL,
+    max_hr INTEGER NOT NULL,
+    avg_hrv INTEGER NOT NULL,
+    avg_spo2 REAL NOT NULL,
+    min_spo2 REAL NOT NULL,
+    dominant_activity_level INTEGER NOT NULL,
+    sample_count INTEGER NOT NULL,
+    sync_status TEXT DEFAULT 'pending',
+    raw_data_payload BLOB,
+    created_at TEXT NOT NULL,
+    UNIQUE(window_start, window_end)
+  );
+`
+
 /** 即時預警主表，由 alert-engine 在預警建立時寫入 */
 const CREATE_REALTIME_ALERTS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS realtime_alert (
@@ -100,6 +121,7 @@ export async function getDatabaseConnection(): Promise<SQLiteDBConnection> {
   await databaseConnection.open()
   await databaseConnection.execute(CREATE_LOCAL_RECORDS_TABLE_SQL)
   await databaseConnection.execute(CREATE_REALTIME_HEALTH_RECORDS_TABLE_SQL)
+  await databaseConnection.execute(CREATE_PERIODIC_HEALTH_RECORDS_TABLE_SQL)
   await databaseConnection.execute(CREATE_ACTIVITY_BASELINE_PROFILE_TABLE_SQL)
   await databaseConnection.execute(CREATE_REALTIME_ALERTS_TABLE_SQL)
   await databaseConnection.execute(CREATE_ALERT_STATUS_TABLE_SQL)
