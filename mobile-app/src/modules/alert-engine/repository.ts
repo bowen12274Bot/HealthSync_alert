@@ -314,4 +314,60 @@ export async function closeRealtimeAlert(
   )
 }
 
+export async function getPendingCompletedAlerts(): Promise<RealtimeAlertRecord[]> {
+  if (!Capacitor.isNativePlatform()) {
+    return []
+  }
+
+  const db = await getDatabaseConnection()
+  const result = await db.query(
+    `SELECT alert_id, alert_type, initial_risk_score, trigger_reason, detection_start_time,
+            detection_end_time, first_occurred_at, sync_status
+       FROM realtime_alert
+      WHERE sync_status = 'pending' AND detection_end_time IS NOT NULL`,
+  )
+
+  return (result.values ?? []).map((row) =>
+    mapRowToRealtimeAlertRecord(row as Record<string, unknown>),
+  )
+}
+
+export async function getAlertStatusesForSync(alertId: string): Promise<AlertStatusRecord[]> {
+  if (!Capacitor.isNativePlatform()) {
+    return []
+  }
+
+  const db = await getDatabaseConnection()
+  const result = await db.query(
+    `SELECT status_id, alert_id, status, risk_score, status_time, status_description
+       FROM alert_status
+      WHERE alert_id = ?
+      ORDER BY status_time ASC`,
+    [alertId],
+  )
+
+  return (result.values ?? []).map((row) =>
+    mapRowToAlertStatusRecord(row as Record<string, unknown>),
+  )
+}
+
+export async function updateAlertsSyncStatus(
+  alertIds: string[],
+  status: 'synced' | 'pending',
+): Promise<void> {
+  if (!Capacitor.isNativePlatform() || alertIds.length === 0) {
+    return
+  }
+
+  const db = await getDatabaseConnection()
+  for (const id of alertIds) {
+    await db.run(
+      `UPDATE realtime_alert
+          SET sync_status = ?
+        WHERE alert_id = ?`,
+      [status, id],
+    )
+  }
+}
+
 export { DEFAULT_ANALYSIS_WINDOW_SIZE }
