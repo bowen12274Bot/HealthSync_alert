@@ -41,7 +41,8 @@ const CREATE_PERIODIC_HEALTH_RECORDS_TABLE_SQL = `
     sample_count INTEGER NOT NULL,
     sync_status TEXT DEFAULT 'pending',
     raw_data_payload BLOB,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    UNIQUE(window_start, window_end)
   );
 `
 
