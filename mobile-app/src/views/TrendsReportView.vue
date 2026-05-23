@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import AppIcon from '@/components/AppIcon.vue'
 import AppShell from '@/components/AppShell.vue'
 import TrendLineChart from '@/components/TrendLineChart.vue'
 import { markConnectionUnavailable } from '@/composables/useConnectionStatus'
@@ -70,20 +71,21 @@ function metricTone(key: TrendMetricKey): 'heart' | 'spo2' | 'hrv' {
   return 'hrv'
 }
 
+function metricIconName(key: TrendMetricKey): 'heart-pulse' | 'droplet' | 'wave' {
+  if (key === 'hr') return 'heart-pulse'
+  if (key === 'spo2') return 'droplet'
+  return 'wave'
+}
+
+function metricRangeText(): string {
+  return selectedMode.value === 'short_term' ? '最近 7 天' : '最近 30 天'
+}
+
 function formatAverage(metric: TrendMetricReport): string {
   if (metric.summary.average === null) {
     return '--'
   }
   return `${metric.summary.average}${metric.unit}`
-}
-
-function formatDelta(metric: TrendMetricReport): string {
-  if (metric.summary.deltaFromPrevious === null) {
-    return '--'
-  }
-
-  const prefix = metric.summary.deltaFromPrevious > 0 ? '+' : ''
-  return `${prefix}${metric.summary.deltaFromPrevious}${metric.unit}`
 }
 
 async function loadShortReport(force = false): Promise<void> {
@@ -228,14 +230,18 @@ watch(
           class="trend-card"
         >
           <div class="trend-header">
-            <div>
-              <p class="metric-name" :class="metricTone(metric.key)">{{ metric.label }}</p>
-              <span>{{ metric.rangeLabel }}</span>
+            <div class="metric-heading">
+              <span class="metric-icon" :class="metricTone(metric.key)">
+                <AppIcon :name="metricIconName(metric.key)" :size="27" :stroke-width="2.1" />
+              </span>
+              <div>
+                <p class="metric-name" :class="metricTone(metric.key)">
+                  {{ metric.label }}
+                  <span class="metric-unit">{{ metric.unit }}</span>
+                </p>
+              </div>
             </div>
-            <div class="metric-badge">
-              <strong>{{ formatAverage(metric) }}</strong>
-              <small>相較前視窗 {{ formatDelta(metric) }}</small>
-            </div>
+            <span class="metric-range">{{ metricRangeText() }}</span>
           </div>
 
           <TrendLineChart
@@ -263,9 +269,13 @@ watch(
 
           <div class="summary-grid">
             <article v-for="metric in summaryMetrics" :key="metric.key">
-              <span>{{ metric.key.toUpperCase() }}</span>
+              <div class="summary-label">
+                <span class="summary-icon" :class="metricTone(metric.key)">
+                  <AppIcon :name="metricIconName(metric.key)" :size="18" :stroke-width="2.1" />
+                </span>
+                <span>{{ metric.key.toUpperCase() }}</span>
+              </div>
               <strong>{{ formatAverage(metric) }}</strong>
-              <small>變化 {{ formatDelta(metric) }}</small>
             </article>
           </div>
 
@@ -377,10 +387,23 @@ watch(
   gap: 12px;
 }
 
+.metric-heading {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.metric-icon,
+.summary-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+
 .metric-name,
 .section-label {
   margin: 0 0 6px;
-  font-size: 0.9rem;
+  font-size: 1.2rem;
   font-weight: 800;
 }
 
@@ -388,7 +411,17 @@ watch(
   color: #f1645c;
 }
 
+.metric-icon.heart,
+.summary-icon.heart {
+  color: #f1645c;
+}
+
 .metric-name.spo2 {
+  color: #3374d8;
+}
+
+.metric-icon.spo2,
+.summary-icon.spo2 {
   color: #3374d8;
 }
 
@@ -396,37 +429,36 @@ watch(
   color: #34a56d;
 }
 
+.metric-icon.hrv,
+.summary-icon.hrv {
+  color: #34a56d;
+}
+
 .trend-header span,
 .summary-head span,
-.metric-badge small,
 .summary-grid small,
 .hint-copy {
   color: #6d8094;
 }
 
-.metric-badge {
-  min-width: 110px;
-  border-radius: 18px;
-  padding: 12px 14px;
-  display: grid;
-  gap: 4px;
-  background: #f4f8fc;
+.metric-unit {
+  margin-left: 4px;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #6d8094;
 }
 
-.metric-badge strong,
+.metric-range {
+  color: #6d8094;
+  font-size: 0.98rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .summary-grid strong,
 .month-switch strong,
 .alert-hint strong {
   color: #163250;
-}
-
-.metric-badge strong {
-  font-size: 1rem;
-}
-
-.metric-badge small {
-  font-size: 0.72rem;
-  line-height: 1.35;
 }
 
 .summary-card {
@@ -450,6 +482,12 @@ watch(
   background: #f5f8fc;
   display: grid;
   gap: 8px;
+}
+
+.summary-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .summary-grid span {

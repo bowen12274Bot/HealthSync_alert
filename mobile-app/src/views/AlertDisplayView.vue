@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppShell from '@/components/AppShell.vue'
+import AppIcon from '@/components/AppIcon.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAlertStatus } from '@/composables/useAlertStatus'
@@ -39,6 +40,13 @@ const historyAlertLevel = computed(() => {
 })
 const showHealthyState = computed(() => !isHistoryMode.value && isHealthy.value)
 
+type AlertVisualIcon = 'check' | 'droplet' | 'heart-pulse' | 'wave' | 'warning'
+type AlertInfoIcon = 'warning' | 'info' | 'calendar' | 'sync' | 'check'
+
+// 下半部資訊列 icon 統一尺寸，之後只要改這裡
+const META_ICON_SIZE = 18
+const META_ICON_STROKE_WIDTH = 2.25
+
 // ── 嚴重程度對應標籤 ──────────────────────────────────────
 const statusChipLabel = computed(() => {
   if (isHistoryMode.value) return historyDetail.value?.statusLabel ?? '預警紀錄'
@@ -70,6 +78,94 @@ const alertTypeName = computed(() => {
       return '生理異常'
   }
 })
+
+function compactCopy(text: string, maxLength = 42): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  const firstSegment = normalized.split(/。|；|,|，/)[0]?.trim() ?? normalized
+  if (firstSegment.length <= maxLength) {
+    return firstSegment
+  }
+  return `${firstSegment.slice(0, maxLength).trim()}...`
+}
+
+const heroSummary = computed(() => {
+  if (isHistoryMode.value) {
+    const detail = historyDetail.value
+    if (detail === null) {
+      return '正在載入預警詳情'
+    }
+
+    if (detail.sourceType === 'long_term') {
+      return '依長時間分析結果判定此段期間存在持續風險'
+    }
+
+    switch (detail.alertType) {
+      case 'spo2_risk':
+        return 'SpO2 曾低於安全範圍，建議回顧當時身體狀況'
+      case 'heart_rate_high':
+        return '心率曾高於安全區間，建議回顧當時活動狀態'
+      case 'physiological_stress':
+        return '生理壓力曾持續偏高，請留意近期恢復狀態'
+      default:
+        return '此筆預警已完成記錄，可查看下方詳細資訊'
+    }
+  }
+
+  if (showHealthyState.value) {
+    return '目前所有生理指標均在正常範圍內'
+  }
+
+  switch (alertData.value.alertType) {
+    case 'spo2_risk':
+      return 'SpO2 指標已低於安全範圍，建議立即確認身體狀況'
+    case 'physiological_stress':
+      return '生理壓力持續偏高，請留意目前活動與恢復狀態'
+    case 'combined_physiological_risk':
+      return '多項生理指標同時異常，建議立即查看詳細資訊'
+    default:
+      return compactCopy(alertSubtitle.value, 38)
+  }
+})
+
+function resolveAlertVisualIcon(alertType: string, sourceType?: 'realtime' | 'long_term'): AlertVisualIcon {
+  if (sourceType === 'long_term') {
+    return 'wave'
+  }
+
+  switch (alertType) {
+    case 'spo2_risk':
+      return 'droplet'
+    case 'heart_rate_high':
+      return 'heart-pulse'
+    case 'physiological_stress':
+    case 'combined_physiological_risk':
+      return 'wave'
+    default:
+      return 'warning'
+  }
+}
+
+const heroIconName = computed<AlertVisualIcon>(() => {
+  if (showHealthyState.value) {
+    return 'check'
+  }
+
+  if (isHistoryMode.value) {
+    return resolveAlertVisualIcon(
+      historyDetail.value?.alertType ?? '',
+      historyDetail.value?.sourceType,
+    )
+  }
+
+  return resolveAlertVisualIcon(alertData.value.alertType ?? '', 'realtime')
+})
+
+type AlertInfoItem = {
+  label: string
+  value: string
+  icon: AlertInfoIcon
+}
 
 // ── 格式化時間 ────────────────────────────────────────────
 function formatTime(iso: string | null): string {
@@ -107,29 +203,29 @@ const alertInfoItems = computed(() => {
 
     if (historyDetail.value.sourceType === 'long_term') {
       return [
-        { label: '預警類型', value: historyDetail.value.alertTypeLabel },
-        { label: '目前狀態', value: historyDetail.value.statusLabel },
-        { label: '風險等級', value: historyDetail.value.displaySeverityLabel },
-        { label: '分析時間範圍', value: historyDetail.value.timeRangeLabel },
-        { label: '最後更新時間', value: formatTime(historyDetail.value.updatedAt) },
-      ]
+        { label: '預警類型', value: historyDetail.value.alertTypeLabel, icon: 'warning' },
+        { label: '目前狀態', value: historyDetail.value.statusLabel, icon: 'info' },
+        { label: '風險等級', value: historyDetail.value.displaySeverityLabel, icon: 'warning' },
+        { label: '分析時間範圍', value: historyDetail.value.timeRangeLabel, icon: 'calendar' },
+        { label: '最後更新時間', value: formatTime(historyDetail.value.updatedAt), icon: 'calendar' },
+      ] satisfies AlertInfoItem[]
     }
 
     return [
-      { label: '預警類型', value: historyDetail.value.alertTypeLabel },
-      { label: '最終狀態', value: historyDetail.value.statusLabel },
-      { label: '最高風險評分', value: `${historyDetail.value.maxRiskScore} / 9 分` },
-      { label: '開始發生時間', value: formatTime(historyDetail.value.firstOccurredAt) },
-      { label: '解除時間', value: formatTime(historyDetail.value.resolvedAt) },
-    ]
+      { label: '預警類型', value: historyDetail.value.alertTypeLabel, icon: 'warning' },
+      { label: '最終狀態', value: historyDetail.value.statusLabel, icon: 'check' },
+      { label: '最高風險評分', value: `${historyDetail.value.maxRiskScore} / 9 分`, icon: 'warning' },
+      { label: '開始發生時間', value: formatTime(historyDetail.value.firstOccurredAt), icon: 'calendar' },
+      { label: '解除時間', value: formatTime(historyDetail.value.resolvedAt), icon: 'calendar' },
+    ] satisfies AlertInfoItem[]
   }
   return [
-    { label: '預警類型', value: alertTypeName.value },
-    { label: '目前狀態', value: alertData.value.status ?? '觀察中' },
-    { label: '風險評分', value: `${alertData.value.riskScore} / 9 分（${riskScoreLabel.value}）` },
-    { label: '開始發生時間', value: formatTime(alertData.value.detectionStartTime) },
-    { label: '首次觸發時間', value: formatTime(alertData.value.firstOccurredAt) },
-  ]
+    { label: '預警類型', value: alertTypeName.value, icon: 'warning' },
+    { label: '目前狀態', value: alertData.value.status ?? '觀察中', icon: 'info' },
+    { label: '風險評分', value: `${alertData.value.riskScore} / 9 分（${riskScoreLabel.value}）`, icon: 'warning' },
+    { label: '開始發生時間', value: formatTime(alertData.value.detectionStartTime), icon: 'calendar' },
+    { label: '首次觸發時間', value: formatTime(alertData.value.firstOccurredAt), icon: 'calendar' },
+  ] satisfies AlertInfoItem[]
 })
 
 // ── 心率趨勢（簡易判斷） ──────────────────────────────────
@@ -232,8 +328,7 @@ watch(
       <section class="alert-hero" :class="isHistoryMode ? historyAlertLevel : alertLevel">
         <div class="alert-banner">
           <div class="alert-icon" :class="isHistoryMode ? historyAlertLevel : alertLevel">
-            <span v-if="showHealthyState">✓</span>
-            <span v-else>!</span>
+            <AppIcon :name="heroIconName" :size="27" :stroke-width="2.65" />
           </div>
           <div>
             <p class="section-label" :class="isHistoryMode ? historyAlertLevel : alertLevel">
@@ -246,11 +341,7 @@ watch(
               }}
             </p>
             <strong>{{ isHistoryMode ? historyDetail?.title ?? '預警詳情' : alertTitle }}</strong>
-            <span>{{
-              isHistoryMode
-                ? historyDetail?.summary ?? '正在載入預警詳情'
-                : alertSubtitle
-            }}</span>
+            <span>{{ heroSummary }}</span>
           </div>
           <div class="pending-tag" :class="isHistoryMode ? historyAlertLevel : alertLevel">{{ statusChipLabel }}</div>
         </div>
@@ -314,10 +405,24 @@ watch(
       <section class="alert-info">
         <dl class="alert-meta">
           <div v-for="item in alertInfoItems" :key="item.label">
+            <span class="meta-icon">
+              <AppIcon
+                :name="item.icon"
+                :size="META_ICON_SIZE"
+                :stroke-width="META_ICON_STROKE_WIDTH"
+              />
+            </span>
             <dt>{{ item.label }}</dt>
             <dd>{{ item.value }}</dd>
           </div>
           <div v-if="isHistoryMode && historyDetail?.sourceType === 'realtime' && historyDetail.statusHistory.length > 0">
+            <span class="meta-icon">
+              <AppIcon
+                name="sync"
+                :size="META_ICON_SIZE"
+                :stroke-width="META_ICON_STROKE_WIDTH"
+              />
+            </span>
             <dt>狀態歷程</dt>
             <dd class="history-timeline">
               <span
@@ -413,38 +518,23 @@ watch(
 
 /* ── Icon ── */
 .alert-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 16px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
-  color: #fff;
-  font-size: 1.3rem;
-  font-weight: 800;
-  background: linear-gradient(180deg, #62c655 0%, #37a249 100%);
-  box-shadow: 0 4px 12px rgba(98, 198, 85, 0.35);
-  transition: background 0.3s ease, box-shadow 0.3s ease;
+  color: #37a249;
 }
 
 .alert-icon.warning {
-  background: linear-gradient(180deg, #ffc107 0%, #ff9800 100%);
-  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.35);
+  color: #db7b12;
 }
 
 .alert-icon.critical {
-  background: linear-gradient(180deg, #ff9800 0%, #f44336 100%);
-  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+  color: #c94a00;
 }
 
 .alert-icon.severe {
-  background: linear-gradient(180deg, #f44336 0%, #c62828 100%);
-  box-shadow: 0 4px 12px rgba(198, 40, 40, 0.5);
-  animation: pulse-severe 1.4s ease-in-out infinite;
-}
-
-@keyframes pulse-severe {
-  0%, 100% { box-shadow: 0 4px 12px rgba(198, 40, 40, 0.5); }
-  50%       { box-shadow: 0 6px 20px rgba(198, 40, 40, 0.75); }
+  color: #b71c1c;
 }
 
 /* ── Section label ── */
@@ -471,8 +561,13 @@ watch(
   display: block;
   margin-top: 4px;
   font-size: 0.82rem;
-  line-height: 1.4;
+  line-height: 1.45;
   color: #6d8094;
+  max-width: 28ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ── Status chip ── */
@@ -622,12 +717,23 @@ watch(
 
 .alert-meta div {
   display: grid;
-  gap: 4px;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  row-gap: 4px;
   padding: 12px 0;
 }
 
 .alert-meta div + div {
   border-top: 1px solid rgba(22, 50, 80, 0.08);
+}
+
+.meta-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  color: #6f8298;
+  margin-top: 2px;
 }
 
 .alert-meta dt,
@@ -636,11 +742,13 @@ watch(
 }
 
 .alert-meta dt {
+  grid-column: 2;
   font-size: 0.8rem;
   color: #6d8094;
 }
 
 .alert-meta dd {
+  grid-column: 2;
   font-size: 0.95rem;
   font-weight: 600;
   color: #163250;
