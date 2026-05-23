@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Network } from '@capacitor/network'
 import { getDatabaseConnection } from '@/db/sqlite'
-import { getApiBaseUrl } from '@/services/apiClient'
+import { getApiBaseUrl, fetchServerHealth } from '@/services/apiClient'
 import { readAuthSession } from '@/services/tokenStorage'
+import { markConnectionAvailable, markConnectionUnavailable } from '@/composables/useConnectionStatus'
 import {
   getPendingCompletedAlerts,
   getAlertStatusesForSync,
@@ -153,11 +154,10 @@ async function executeSync(): Promise<void> {
   await db.run(
     `INSERT INTO sync_record (sync_id, sync_start_time, sync_status, sync_data_range, sync_data_count, retry_count)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [syncId, syncStartTime, 'running', syncDataRange, syncDataCount, 0],
+    [syncId, syncStartTime, 'pending', syncDataRange, syncDataCount, 0],
   )
 
   const requestBody = {
-    user_id: `user_${user.id}`,
     device_id: 'device_pixel7_001',
     sync_started_at: new Date().toISOString(),
     periodic_health_records: payloadRecords,
@@ -189,9 +189,9 @@ async function executeSync(): Promise<void> {
           await updateAlertsSyncStatus(alertIds, 'synced')
         }
 
-        // 更新同步紀錄為 success
+        // 更新同步紀錄為 synced
         await db.run(
-          `UPDATE sync_record SET sync_status = 'success', sync_end_time = ? WHERE sync_id = ?`,
+          `UPDATE sync_record SET sync_status = 'synced', sync_end_time = ? WHERE sync_id = ?`,
           [new Date().toISOString(), syncId],
         )
 
@@ -208,12 +208,20 @@ async function executeSync(): Promise<void> {
     const errorMessage = error?.message || String(error)
     console.error('[SyncClient] HTTP 同步請求失敗:', errorMessage)
 
-    // 更新同步紀錄為 failed 并記錄失敗原因
+    // 更新同步紀錄為 pending 并記錄失敗原因
     await db.run(
       `UPDATE sync_record 
-          SET sync_status = 'failed', sync_end_time = ?, failure_reason = ? 
+          SET sync_status = 'pending', sync_end_time = ?, failure_reason = ? 
         WHERE sync_id = ?`,
       [new Date().toISOString(), errorMessage, syncId],
     )
+
+    // 驗證伺服器狀態以切換連線狀態
+    try {
+      await fetchServerHealth()
+      markConnectionAvailable()
+    } catch {
+      markConnectionUnavailable()
+    }
   }
 }
