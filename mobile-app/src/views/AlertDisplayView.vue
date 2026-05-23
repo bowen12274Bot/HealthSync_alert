@@ -565,6 +565,7 @@ watch(
   color: #6d8094;
   max-width: 28ch;
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;

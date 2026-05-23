@@ -186,13 +186,13 @@ export function useAlertStatus() {
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
       if (diffDays >= 7) {
-        return { label: '持續健康', value: '近七天' }
+        return { label: '持續健康', value: '7 天' }
       }
 
       return { label: '持續健康', value: `${diffDays} 天` }
     }
 
-    return { label: '持續健康', value: '近七天' }
+    return { label: '持續健康', value: '7 天' }
   })
 
   onMounted(() => {
