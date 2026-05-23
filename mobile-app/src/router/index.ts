@@ -38,7 +38,7 @@ const router = createRouter({
       meta: { requiresAuth: true, alertMode: 'live' },
     },
     {
-      path: '/alerts/history/:alertId',
+      path: '/alerts/history/:recordId',
       name: 'alert-display-history',
       component: AlertDisplayView,
       meta: { requiresAuth: true, alertMode: 'history' },

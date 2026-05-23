@@ -23,6 +23,7 @@ import {
   readAuthSession,
   writeAuthSession,
 } from '@/services/tokenStorage'
+import { useAlertHistoryStore } from '@/stores/alertHistory'
 
 type LoginPhase = 'idle' | 'authenticating' | 'baseline_initializing' | 'baseline_retrying'
 
@@ -103,11 +104,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function clearSession() {
+    const alertHistoryStore = useAlertHistoryStore()
     applySession('', null)
     if (requiresBaselineInitialization()) {
       simulationRuntime.setActivityBaselineProfiles([])
     }
     resetLoginPhase()
+    alertHistoryStore.clearCache()
     await clearAuthSession()
   }
 
@@ -168,6 +171,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function login(email: string, password: string) {
+    const alertHistoryStore = useAlertHistoryStore()
     loginPhase.value = 'authenticating'
 
     const result = await loginWithEmailPassword({ email, password })
@@ -180,6 +184,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     applySession(result.access_token, user)
+    alertHistoryStore.clearCache()
     await writeAuthSession({ token: result.access_token, user })
     isReady.value = true
     resetLoginPhase()

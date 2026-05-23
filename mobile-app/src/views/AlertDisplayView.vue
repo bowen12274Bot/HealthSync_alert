@@ -1,21 +1,47 @@
 <script setup lang="ts">
 import AppShell from '@/components/AppShell.vue'
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAlertStatus } from '@/composables/useAlertStatus'
+import { markConnectionUnavailable, useConnectionStatus } from '@/composables/useConnectionStatus'
 import { useLatestHealthRecord } from '@/composables/useLatestHealthRecord'
+import { AlertHistoryServiceError } from '@/services/alertHistoryService'
+import { useAuthStore } from '@/stores/auth'
+import { useAlertHistoryStore } from '@/stores/alertHistory'
 
 const route = useRoute()
-const { alertData, isHealthy, alertLevel, alertTitle, alertSubtitle, alertDuration } =
+const router = useRouter()
+const { alertData, isHealthy, alertLevel, alertTitle, alertSubtitle, alertDuration, refreshAlertStatus } =
   useAlertStatus()
 const { heartRate, hrv, spO2 } = useLatestHealthRecord()
+const authStore = useAuthStore()
+const alertHistoryStore = useAlertHistoryStore()
+const { isOnline } = useConnectionStatus()
 
 const isHistoryMode = computed(() => route.meta.alertMode === 'history')
+const recordId = computed(() => String(route.params.recordId ?? ''))
+const historyDetail = computed(() => (
+  isHistoryMode.value && recordId.value ? alertHistoryStore.getDetail(recordId.value) : null
+))
+const isHistoryLoading = ref(false)
+const historyErrorMessage = ref('')
 const pageTitle = computed(() => (isHistoryMode.value ? '預警詳情' : '即時預警'))
+const historyAlertLevel = computed(() => {
+  if (historyDetail.value === null) return 'warning'
+  switch (historyDetail.value.displaySeverity) {
+    case 'mild':
+      return 'warning'
+    case 'moderate':
+      return 'critical'
+    default:
+      return 'severe'
+  }
+})
+const showHealthyState = computed(() => !isHistoryMode.value && isHealthy.value)
 
 // ── 嚴重程度對應標籤 ──────────────────────────────────────
 const statusChipLabel = computed(() => {
-  if (isHistoryMode.value) return '已解除'
+  if (isHistoryMode.value) return historyDetail.value?.statusLabel ?? '預警紀錄'
   switch (alertLevel.value) {
     case 'warning':
       return '觀察中'
@@ -30,6 +56,9 @@ const statusChipLabel = computed(() => {
 
 // ── 預警類型中文名稱 ──────────────────────────────────────
 const alertTypeName = computed(() => {
+  if (isHistoryMode.value) {
+    return historyDetail.value?.alertTypeLabel ?? '預警類型'
+  }
   switch (alertData.value.alertType) {
     case 'spo2_risk':
       return '血氧風險'
@@ -59,6 +88,9 @@ function formatTime(iso: string | null): string {
 
 // ── 風險分數對應文字 ──────────────────────────────────────
 const riskScoreLabel = computed(() => {
+  if (isHistoryMode.value) {
+    return historyDetail.value?.displaySeverityLabel ?? '—'
+  }
   const score = alertData.value.riskScore
   if (score <= 2) return '低'
   if (score <= 4) return '中'
@@ -69,12 +101,26 @@ const riskScoreLabel = computed(() => {
 // ── 生命表格項目（即時模式）────────────────────────────────
 const alertInfoItems = computed(() => {
   if (isHistoryMode.value) {
+    if (historyDetail.value === null) {
+      return []
+    }
+
+    if (historyDetail.value.sourceType === 'long_term') {
+      return [
+        { label: '預警類型', value: historyDetail.value.alertTypeLabel },
+        { label: '目前狀態', value: historyDetail.value.statusLabel },
+        { label: '風險等級', value: historyDetail.value.displaySeverityLabel },
+        { label: '分析時間範圍', value: historyDetail.value.timeRangeLabel },
+        { label: '最後更新時間', value: formatTime(historyDetail.value.updatedAt) },
+      ]
+    }
+
     return [
-      { label: '預警類型', value: alertTypeName.value },
-      { label: '最終狀態', value: alertData.value.status ?? '已解除' },
-      { label: '最高風險評分', value: `${alertData.value.riskScore} / 9 分` },
-      { label: '開始發生時間', value: formatTime(alertData.value.detectionStartTime) },
-      { label: '解除時間', value: formatTime(alertData.value.lastResolvedTime) },
+      { label: '預警類型', value: historyDetail.value.alertTypeLabel },
+      { label: '最終狀態', value: historyDetail.value.statusLabel },
+      { label: '最高風險評分', value: `${historyDetail.value.maxRiskScore} / 9 分` },
+      { label: '開始發生時間', value: formatTime(historyDetail.value.firstOccurredAt) },
+      { label: '解除時間', value: formatTime(historyDetail.value.resolvedAt) },
     ]
   }
   return [
@@ -110,6 +156,72 @@ const hrvTrendLabel = computed(() => {
   if (val > 120) return '偏高 ↑'
   return '正常'
 })
+
+const historyTriggerReasons = computed(() => {
+  if (historyDetail.value === null) return []
+
+  return historyDetail.value.triggerReason
+    .split(/,|\/|\n/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+})
+
+async function loadHistoryDetail(force = false): Promise<void> {
+  if (!isHistoryMode.value || !recordId.value) {
+    return
+  }
+
+  if (!isOnline.value) {
+    historyErrorMessage.value = '預警詳情需連線後才能查看'
+    return
+  }
+
+  if (!authStore.token) {
+    historyErrorMessage.value = '登入狀態已失效，請重新登入'
+    return
+  }
+
+  isHistoryLoading.value = true
+  historyErrorMessage.value = ''
+
+  try {
+    await alertHistoryStore.ensureDetail(authStore.token, recordId.value, force)
+  } catch (error) {
+    if (error instanceof AlertHistoryServiceError) {
+      if (error.code === 'unauthorized') {
+        await authStore.logout()
+        void router.push({ name: 'login' })
+        return
+      }
+      if (error.code === 'network') {
+        markConnectionUnavailable()
+      }
+      historyErrorMessage.value = error.message
+      return
+    }
+    historyErrorMessage.value = '取得預警詳情失敗，請稍後再試'
+  } finally {
+    isHistoryLoading.value = false
+  }
+}
+
+onMounted(() => {
+  if (isHistoryMode.value) {
+    void loadHistoryDetail()
+    return
+  }
+
+  void refreshAlertStatus()
+})
+
+watch(
+  () => recordId.value,
+  () => {
+    if (isHistoryMode.value) {
+      void loadHistoryDetail()
+    }
+  },
+)
 </script>
 
 <template>
@@ -117,24 +229,34 @@ const hrvTrendLabel = computed(() => {
     <section class="alert-display-layout">
 
       <!-- ── 上半段：警報橫幅 + 指標卡 + 觸發原因 ── -->
-      <section class="alert-hero" :class="alertLevel">
+      <section class="alert-hero" :class="isHistoryMode ? historyAlertLevel : alertLevel">
         <div class="alert-banner">
-          <div class="alert-icon" :class="alertLevel">
-            <span v-if="isHealthy">✓</span>
+          <div class="alert-icon" :class="isHistoryMode ? historyAlertLevel : alertLevel">
+            <span v-if="showHealthyState">✓</span>
             <span v-else>!</span>
           </div>
           <div>
-            <p class="section-label" :class="alertLevel">
-              {{ isHealthy ? '健康狀態良好' : '發現異常指標' }}
+            <p class="section-label" :class="isHistoryMode ? historyAlertLevel : alertLevel">
+              {{
+                isHistoryMode
+                  ? historyDetail?.historyTypeLabel ?? '歷史預警'
+                  : showHealthyState
+                    ? '健康狀態良好'
+                    : '發現異常指標'
+              }}
             </p>
-            <strong>{{ alertTitle }}</strong>
-            <span>{{ alertSubtitle }}</span>
+            <strong>{{ isHistoryMode ? historyDetail?.title ?? '預警詳情' : alertTitle }}</strong>
+            <span>{{
+              isHistoryMode
+                ? historyDetail?.summary ?? '正在載入預警詳情'
+                : alertSubtitle
+            }}</span>
           </div>
-          <div class="pending-tag" :class="alertLevel">{{ statusChipLabel }}</div>
+          <div class="pending-tag" :class="isHistoryMode ? historyAlertLevel : alertLevel">{{ statusChipLabel }}</div>
         </div>
 
         <!-- 即時指標卡 -->
-        <div class="indicator-grid">
+        <div v-if="!isHistoryMode" class="indicator-grid">
           <article class="indicator-card heart">
             <p>HR</p>
             <strong>{{ heartRate }} <small>bpm</small></strong>
@@ -153,13 +275,27 @@ const hrvTrendLabel = computed(() => {
         </div>
 
         <!-- 持續時間膠囊 -->
-        <div class="duration-pill" :class="alertLevel">
+        <div v-if="!isHistoryMode" class="duration-pill" :class="alertLevel">
           <span>{{ alertDuration.label }}</span>
           <strong>{{ alertDuration.value }}</strong>
         </div>
 
         <!-- 觸發原因列表（有預警時才顯示） -->
-        <div v-if="!isHealthy && alertData.triggerReasons.length > 0" class="reason-block">
+        <div v-if="isHistoryMode && historyErrorMessage" class="summary-card">
+          {{ historyErrorMessage }}
+        </div>
+        <div v-else-if="isHistoryMode && isHistoryLoading" class="summary-card">
+          正在向伺服器取得預警詳情...
+        </div>
+        <div v-else-if="isHistoryMode && historyTriggerReasons.length > 0" class="reason-block">
+          <p class="reason-title">觸發原因</p>
+          <ul class="reason-list">
+            <li v-for="reason in historyTriggerReasons" :key="reason">
+              {{ reason }}
+            </li>
+          </ul>
+        </div>
+        <div v-else-if="!showHealthyState && alertData.triggerReasons.length > 0" class="reason-block">
           <p class="reason-title">觸發原因</p>
           <ul class="reason-list">
             <li v-for="reason in alertData.triggerReasons" :key="reason">
@@ -169,7 +305,7 @@ const hrvTrendLabel = computed(() => {
         </div>
 
         <!-- 健康說明（無警報時顯示） -->
-        <div v-else-if="isHealthy" class="summary-card healthy">
+        <div v-else-if="showHealthyState" class="summary-card healthy">
           目前所有生理指標均在正常範圍內，系統持續監測中。如出現異常，將即時通知您。
         </div>
       </section>
@@ -180,6 +316,17 @@ const hrvTrendLabel = computed(() => {
           <div v-for="item in alertInfoItems" :key="item.label">
             <dt>{{ item.label }}</dt>
             <dd>{{ item.value }}</dd>
+          </div>
+          <div v-if="isHistoryMode && historyDetail?.sourceType === 'realtime' && historyDetail.statusHistory.length > 0">
+            <dt>狀態歷程</dt>
+            <dd class="history-timeline">
+              <span
+                v-for="item in historyDetail.statusHistory"
+                :key="`${item.statusTime}-${item.status}`"
+              >
+                {{ formatTime(item.statusTime) }} {{ item.statusLabel }}
+              </span>
+            </dd>
           </div>
         </dl>
       </section>
@@ -497,5 +644,17 @@ const hrvTrendLabel = computed(() => {
   font-size: 0.95rem;
   font-weight: 600;
   color: #163250;
+}
+
+.history-timeline {
+  display: grid;
+  gap: 8px;
+}
+
+.history-timeline span {
+  display: block;
+  color: #35536f;
+  font-size: 0.84rem;
+  line-height: 1.45;
 }
 </style>

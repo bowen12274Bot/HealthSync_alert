@@ -296,15 +296,17 @@ const { isOnline, isPinging, isRetrying, retryCountdownSeconds } = useConnection
 const router = useRouter()
 const { currentScenarioName, simulationStatusText } = useSimulationControl()
 const { heartRate, hrv, spO2 } = useLatestHealthRecord()
-const { isHealthy, alertLevel, alertTitle, alertSubtitle, alertDuration } = useAlertStatus()
+const { hasActiveAlert, isHealthy, alertLevel, alertTitle, alertSubtitle, alertDuration, refreshAlertStatus } =
+  useAlertStatus()
 
 function openSimulationView(): void {
   void router.push({ name: 'data-simulation' })
 }
 
-function openAlertView(): void {
-  if (!isHealthy.value) {
-    void router.push({ name: 'alert-display-live' })
+async function openAlertView(): Promise<void> {
+  await refreshAlertStatus()
+  if (hasActiveAlert.value) {
+    await router.push({ name: 'alert-display-live' })
   }
 }
 </script>

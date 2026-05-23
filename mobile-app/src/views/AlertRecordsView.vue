@@ -1,13 +1,87 @@
 <script setup lang="ts">
-import AppShell from '@/components/AppShell.vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
-const historicalAlerts = [
-  { id: 'alert-20250514-1432', type: '即時預警', title: '發現異常指標', time: '2025/05/14 14:32', maxLevel: '中度', theme: 'moderate', icon: '!' },
-  { id: 'alert-20250514-1018', type: '即時預警', title: '心率過高', time: '2025/05/14 10:18', maxLevel: '高度', theme: 'high', icon: '～' },
-  { id: 'alert-20250513-2147', type: '即時預警', title: '血氧過低', time: '2025/05/13 21:47', maxLevel: '中度', theme: 'moderate', icon: '💧' },
-  { id: 'alert-20250512-1803', type: '長期預警', title: 'HRV 過低', time: '2025/05/12 18:03', maxLevel: '輕度', theme: 'mild', icon: '～' },
-  { id: 'alert-20250511-0922', type: '即時預警', title: '發現異常指標', time: '2025/05/11 09:22', maxLevel: '中度', theme: 'moderate', icon: '!' },
-]
+import AppShell from '@/components/AppShell.vue'
+import { markConnectionUnavailable, useConnectionStatus } from '@/composables/useConnectionStatus'
+import {
+  AlertHistoryServiceError,
+} from '@/services/alertHistoryService'
+import { useAuthStore } from '@/stores/auth'
+import { useAlertHistoryStore } from '@/stores/alertHistory'
+
+const HISTORY_LIMIT = 50
+
+const authStore = useAuthStore()
+const alertHistoryStore = useAlertHistoryStore()
+const router = useRouter()
+const { isOnline } = useConnectionStatus()
+
+const isLoading = ref(false)
+const errorMessage = ref('')
+
+const historicalAlerts = computed(() => alertHistoryStore.records)
+const isOffline = computed(() => !isOnline.value)
+const isEmpty = computed(() => !isLoading.value && !isOffline.value && historicalAlerts.value.length === 0 && !errorMessage.value)
+
+function resolveHistoryIcon(alertType: string, sourceType: 'realtime' | 'long_term'): string {
+  if (sourceType === 'long_term') {
+    return '~'
+  }
+  switch (alertType) {
+    case 'spo2_risk':
+      return 'O'
+    case 'physiological_stress':
+      return '~'
+    default:
+      return '!'
+  }
+}
+
+async function loadAlertHistory(force = false): Promise<void> {
+  if (!isOnline.value) {
+    errorMessage.value = ''
+    return
+  }
+
+  if (!authStore.token) {
+    errorMessage.value = '登入狀態已失效，請重新登入'
+    return
+  }
+
+  isLoading.value = true
+  errorMessage.value = ''
+
+  try {
+    await alertHistoryStore.ensureRecords(authStore.token, HISTORY_LIMIT, force)
+  } catch (error) {
+    if (error instanceof AlertHistoryServiceError) {
+      if (error.code === 'unauthorized') {
+        await authStore.logout()
+        void router.push({ name: 'login' })
+        return
+      }
+      if (error.code === 'network') {
+        markConnectionUnavailable()
+      }
+      errorMessage.value = error.message
+      return
+    }
+    errorMessage.value = '取得預警紀錄失敗，請稍後再試'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(() => {
+  void loadAlertHistory()
+})
+
+watch(isOnline, (nextIsOnline) => {
+  if (nextIsOnline && historicalAlerts.value.length === 0) {
+    void loadAlertHistory()
+  }
+})
 </script>
 
 <template>
@@ -30,26 +104,43 @@ const historicalAlerts = [
       </div>
 
       <ul class="history-list">
-        <li v-for="item in historicalAlerts" :key="item.id">
+        <li v-if="isOffline" class="history-state-card">
+          <p class="history-state-title">目前無法查看</p>
+          <p class="history-state-copy">預警紀錄需連線後才能查看</p>
+        </li>
+        <li v-else-if="isLoading" class="history-state-card">
+          <p class="history-state-title">載入中</p>
+          <p class="history-state-copy">正在向伺服器取得預警紀錄</p>
+        </li>
+        <li v-else-if="errorMessage" class="history-state-card">
+          <p class="history-state-title">載入失敗</p>
+          <p class="history-state-copy">{{ errorMessage }}</p>
+          <button class="state-action" type="button" @click="loadAlertHistory(true)">重新整理</button>
+        </li>
+        <li v-else-if="isEmpty" class="history-state-card">
+          <p class="history-state-title">目前沒有歷史預警紀錄</p>
+          <p class="history-state-copy">當伺服器收到完整預警後，會顯示在這裡</p>
+        </li>
+        <li v-for="item in historicalAlerts" v-else :key="item.recordId">
           <RouterLink
             class="history-item"
-            :class="`theme-${item.theme}`"
-            :to="{ name: 'alert-display-history', params: { alertId: item.id } }"
+            :class="`theme-${item.displaySeverity}`"
+            :to="{ name: 'alert-display-history', params: { recordId: item.recordId } }"
           >
-            <div class="history-icon">{{ item.icon }}</div>
+            <div class="history-icon">{{ resolveHistoryIcon(item.alertType, item.sourceType) }}</div>
             <div class="history-copy">
               <span class="history-type">{{ item.title }}</span>
-              <small>{{ item.time }}</small>
+              <small>{{ item.timeRangeLabel }}</small>
             </div>
             <div class="history-side">
-              <span class="level-chip">{{ item.maxLevel }}</span>
+              <span class="level-chip">{{ item.displaySeverityLabel }}</span>
               <span class="detail-link">詳情</span>
             </div>
           </RouterLink>
         </li>
       </ul>
 
-      <p class="history-end">已載入全部紀錄</p>
+      <p v-if="historicalAlerts.length > 0" class="history-end">已載入全部紀錄</p>
     </section>
   </AppShell>
 </template>
@@ -111,6 +202,43 @@ const historicalAlerts = [
   list-style: none;
   display: grid;
   gap: 12px;
+}
+
+.history-state-card {
+  border-radius: 18px;
+  padding: 18px 16px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 28px rgba(35, 63, 103, 0.08);
+  display: grid;
+  gap: 8px;
+}
+
+.history-state-title,
+.history-state-copy {
+  margin: 0;
+}
+
+.history-state-title {
+  color: #163250;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.history-state-copy {
+  color: #6d8094;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.state-action {
+  width: fit-content;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: #174f96;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .history-item {
