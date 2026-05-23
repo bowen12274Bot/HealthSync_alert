@@ -22,4 +22,5 @@
 - `database/README.md`：雙層資料庫規劃與資料表方向
 - `api/README.md`：API 分類與預計端點
 - `alert-rules/README.md`：本地模擬、本地即時預警與長期預警文件入口
+- `frontend/README.md`：前端頁面、即時預警顯示與趨勢報表設計入口
 - `setup/README.md`：開發與測試環境入口
