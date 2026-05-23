@@ -4,12 +4,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from app.utils.analysis_windows import (
+from app.long_term_alerts.windows import (
     AnalysisWindow,
     DailyScanWindows,
     derive_daily_scan_windows,
 )
-from app.services.long_term_alert_trigger import (
+from app.long_term_alerts.trigger import (
     HistoryTriggerDecision,
     TrendAnalysisPeriod,
     TrendTriggerDecision,

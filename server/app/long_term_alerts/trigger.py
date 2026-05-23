@@ -11,7 +11,7 @@ from app.models.periodic_health_record import PeriodicHealthRecord
 from app.models.periodic_health_record_analysis_status import (
     PeriodicHealthRecordAnalysisStatus,
 )
-from app.utils.analysis_windows import AnalysisWindow
+from app.long_term_alerts.windows import AnalysisWindow
 
 
 class TrendAnalysisPeriod(str, Enum):
