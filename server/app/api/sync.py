@@ -1,6 +1,6 @@
 import base64
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends
@@ -19,6 +19,16 @@ from app.api.auth import get_authenticated_session, AuthenticatedSession
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+def validate_utc_datetime(dt: Optional[datetime], field_name: str) -> None:
+    if dt is None:
+        return
+    if dt.tzinfo is None:
+        raise ValueError(f"Time field '{field_name}' must have timezone info")
+    offset = dt.utcoffset()
+    if offset is None or offset.total_seconds() != 0:
+        raise ValueError(f"Time field '{field_name}' must be in UTC timezone")
 
 
 class PeriodicHealthRecordSchema(BaseModel):
@@ -59,7 +69,6 @@ class AlertSyncSchema(BaseModel):
 
 
 class SyncBatchRequest(BaseModel):
-    user_id: str
     device_id: str
     sync_started_at: datetime
     periodic_health_records: list[PeriodicHealthRecordSchema]
@@ -79,17 +88,31 @@ def sync_batch(
     db: DbSession,
     session: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
 ):
-    server_received_at = datetime.now()
+    server_received_at = datetime.now(timezone.utc)
     accepted_health_record_count = 0
     accepted_alert_count = 0
 
     try:
         user_account_id = session.user.id
+        db_user_id = f"user_{user_account_id}"
+
+        # 1. Validate sync global time
+        validate_utc_datetime(request.sync_started_at, "sync_started_at")
 
         # Process Periodic Health Records
         if request.periodic_health_records:
             records_to_insert = []
             for record in request.periodic_health_records:
+                # Time validation
+                validate_utc_datetime(record.window_start, "window_start")
+                validate_utc_datetime(record.window_end, "window_end")
+
+                # Consistency validation
+                if record.window_start >= record.window_end:
+                    raise ValueError("window_start must be before window_end")
+                if record.sample_count < 0:
+                    raise ValueError("sample_count must be non-negative")
+
                 # Decode Base64 to bytes if present
                 raw_bytes = None
                 if record.raw_data_payload:
@@ -100,7 +123,7 @@ def sync_batch(
                         raise ValueError(f"Invalid Base64 in raw_data_payload: {e}")
 
                 records_to_insert.append({
-                    "user_id": request.user_id,
+                    "user_id": db_user_id,
                     "device_id": request.device_id,
                     "window_start": record.window_start,
                     "window_end": record.window_end,
@@ -129,6 +152,36 @@ def sync_batch(
         if request.alerts:
             alerts_to_insert = []
             for alert in request.alerts:
+                # Time validation
+                validate_utc_datetime(alert.first_occurred_at, "first_occurred_at")
+                validate_utc_datetime(alert.resolved_at, "resolved_at")
+
+                # Consistency validation
+                if not alert.status_history:
+                    raise ValueError("status_history cannot be empty")
+                if alert.status_change_count != len(alert.status_history):
+                    raise ValueError("status_change_count must match status_history length")
+
+                max_hist_risk = max(sh.risk_score for sh in alert.status_history)
+                if alert.max_risk_score < max_hist_risk:
+                    raise ValueError("max_risk_score cannot be less than the maximum risk score in status history")
+
+                for sh in alert.status_history:
+                    validate_utc_datetime(sh.status_time, "status_time")
+                    if alert.first_occurred_at > sh.status_time:
+                        raise ValueError("first_occurred_at cannot be after status_time")
+
+                if alert.resolved_at:
+                    if alert.resolved_at < alert.first_occurred_at:
+                        raise ValueError("resolved_at cannot be before first_occurred_at")
+                    for sh in alert.status_history:
+                        if sh.status_time > alert.resolved_at:
+                            raise ValueError("status_time cannot be after resolved_at")
+                    # Check that alert has resolved status in history
+                    resolved_statuses = {"已解除", "已轉移"}
+                    if not any(sh.status in resolved_statuses for sh in alert.status_history):
+                        raise ValueError("resolved alert must contain a resolved status in status history")
+
                 duration = None
                 if alert.resolved_at and alert.first_occurred_at:
                     duration = int((alert.resolved_at - alert.first_occurred_at).total_seconds())
@@ -142,7 +195,7 @@ def sync_batch(
                         last_abnormal = sh.status_time
                 
                 alerts_to_insert.append({
-                    "user_id": request.user_id,
+                    "user_id": db_user_id,
                     "user_account_id": user_account_id,
                     "alert_source": "mobile",
                     "alert_id": alert.alert_id,

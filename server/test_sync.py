@@ -1,5 +1,5 @@
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import urllib.request
 import msgpack
@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, text
 # ─── 1. 產生測試資料 ──────────────────────────────────────────────────────────
 
 print("=== [E2E 測試] 開始產生模擬 10 分鐘健康數據 ===")
-now = datetime.now()
+now = datetime.now(timezone.utc)
 window_start = now - timedelta(minutes=10)
 window_end = now - timedelta(seconds=1)
 
@@ -45,7 +45,6 @@ print(f"Base64 編碼後大小: {len(base64_payload)} bytes")
 
 print("\n=== [E2E 測試] 發送同步 API 請求 (第一次) ===")
 request_body = {
-    "user_id": "demo_user_001",
     "device_id": "test_device_docker",
     "sync_started_at": now.isoformat(),
     "periodic_health_records": [
@@ -155,13 +154,19 @@ DATABASE_URL = "postgresql+psycopg://healthsync_user:healthsync_password@postgre
 engine = create_engine(DATABASE_URL)
 
 with engine.connect() as conn:
+    # 0. 動態解析 db_user_id
+    user_id_query = text("SELECT id FROM user_accounts WHERE email = 'demo@healthsync.local'")
+    user_account_id = conn.execute(user_id_query).scalar()
+    db_user_id = f"user_{user_account_id}"
+    print(f"動態取得之 db_user_id: {db_user_id}")
+
     # 1. 驗證資料表內此 Window 只有唯一一筆紀錄 (證明第二次發送被 ON CONFLICT DO NOTHING 濾除，沒有重複插入)
     count_query = text("""
         SELECT COUNT(*) 
         FROM periodic_health_records 
-        WHERE user_id = 'demo_user_001' AND window_start = :w_start
+        WHERE user_id = :user_id AND window_start = :w_start
     """)
-    db_count = conn.execute(count_query, {"w_start": window_start}).scalar()
+    db_count = conn.execute(count_query, {"w_start": window_start, "user_id": db_user_id}).scalar()
     print(f"該時間窗在資料庫中的紀錄筆數: {db_count} (預期為 1)")
     assert db_count == 1, "❌ 冪等性驗證失敗！資料庫中出現重複紀錄！"
     print("✅ 冪等性去重驗證成功！重複上傳未產生重複紀錄。")
@@ -170,9 +175,9 @@ with engine.connect() as conn:
     query = text("""
         SELECT raw_data_payload, sample_count, avg_hr
         FROM periodic_health_records 
-        WHERE user_id = 'demo_user_001' AND window_start = :w_start
+        WHERE user_id = :user_id AND window_start = :w_start
     """)
-    result = conn.execute(query, {"w_start": window_start}).fetchone()
+    result = conn.execute(query, {"w_start": window_start, "user_id": db_user_id}).fetchone()
     
     if not result:
         print("❌ 驗證失敗：資料庫找不到該筆紀錄！")
