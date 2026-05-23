@@ -2,7 +2,7 @@ import base64
 import json
 import urllib.request
 import urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 BASE_URL = "http://localhost:8000"
 
@@ -62,9 +62,8 @@ auth_header = {"Authorization": f"Bearer {valid_token}"}
 # ─── 邊緣測試案例 1. 無 Token 同步上傳 ──────────────────────────────────────────
 
 sync_payload = {
-    "user_id": "edge_user_001",
     "device_id": "edge_device_001",
-    "sync_started_at": datetime.now().isoformat(),
+    "sync_started_at": datetime.now(timezone.utc).isoformat(),
     "periodic_health_records": [],
     "alerts": []
 }
@@ -106,13 +105,12 @@ assert empty_res["accepted_alert_count"] == 0
 # ─── 邊緣測試案例 4. 健康紀錄缺少 steps 欄位 (向下相容測試) ─────────────────────────
 
 compatible_payload = {
-    "user_id": "edge_user_001",
     "device_id": "edge_device_001",
-    "sync_started_at": datetime.now().isoformat(),
+    "sync_started_at": datetime.now(timezone.utc).isoformat(),
     "periodic_health_records": [
         {
-            "window_start": (datetime.now() - timedelta(minutes=20)).isoformat(),
-            "window_end": (datetime.now() - timedelta(minutes=10)).isoformat(),
+            "window_start": (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat(),
+            "window_end": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(),
             "avg_hr": 75,
             "min_hr": 68,
             "max_hr": 85,
@@ -141,13 +139,12 @@ assert compat_res["accepted_health_record_count"] == 1
 # ─── 邊緣測試案例 5. 異常的 Base64 數據壓縮載荷 ────────────────────────────────────
 
 broken_payload = {
-    "user_id": "edge_user_001",
     "device_id": "edge_device_001",
-    "sync_started_at": datetime.now().isoformat(),
+    "sync_started_at": datetime.now(timezone.utc).isoformat(),
     "periodic_health_records": [
         {
-            "window_start": (datetime.now() - timedelta(minutes=30)).isoformat(),
-            "window_end": (datetime.now() - timedelta(minutes=20)).isoformat(),
+            "window_start": (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
+            "window_end": (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat(),
             "avg_hr": 75,
             "min_hr": 68,
             "max_hr": 85,
@@ -169,5 +166,168 @@ run_test_case(
     headers=auth_header,
     expected_status=400
 )
+
+
+# ─── 邊緣測試案例 6. 沒有時區的時間欄位被拒絕 (預期 400) ─────────────────────────
+
+naive_time_payload = {
+    "device_id": "edge_device_001",
+    "sync_started_at": datetime.now(timezone.utc).isoformat(),
+    "periodic_health_records": [
+        {
+            "window_start": "2026-05-23T12:00:00",  # naive
+            "window_end": "2026-05-23T12:10:00Z",
+            "avg_hr": 75,
+            "min_hr": 68,
+            "max_hr": 85,
+            "avg_hrv": 45,
+            "avg_spo2": 98.0,
+            "min_spo2": 96.5,
+            "dominant_activity_level": 1,
+            "sample_count": 120
+        }
+    ],
+    "alerts": []
+}
+
+run_test_case(
+    name="上傳無時區資訊的時間欄位 (預期 400 錯誤)",
+    path="/sync/batch",
+    data=naive_time_payload,
+    headers=auth_header,
+    expected_status=400
+)
+
+
+# ─── 邊緣測試案例 7. window_start >= window_end 被拒絕 (預期 400) ─────────────────
+
+invalid_window_payload = {
+    "device_id": "edge_device_001",
+    "sync_started_at": datetime.now(timezone.utc).isoformat(),
+    "periodic_health_records": [
+        {
+            "window_start": datetime.now(timezone.utc).isoformat(),
+            "window_end": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(),  # end before start
+            "avg_hr": 75,
+            "min_hr": 68,
+            "max_hr": 85,
+            "avg_hrv": 45,
+            "avg_spo2": 98.0,
+            "min_spo2": 96.5,
+            "dominant_activity_level": 1,
+            "sample_count": 120
+        }
+    ],
+    "alerts": []
+}
+
+run_test_case(
+    name="上傳 window_start >= window_end 的健康紀錄 (預期 400 錯誤)",
+    path="/sync/batch",
+    data=invalid_window_payload,
+    headers=auth_header,
+    expected_status=400
+)
+
+
+# ─── 邊緣測試案例 8. sample_count < 0 被拒絕 (預期 400) ───────────────────────────
+
+invalid_sample_payload = {
+    "device_id": "edge_device_001",
+    "sync_started_at": datetime.now(timezone.utc).isoformat(),
+    "periodic_health_records": [
+        {
+            "window_start": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(),
+            "window_end": datetime.now(timezone.utc).isoformat(),
+            "avg_hr": 75,
+            "min_hr": 68,
+            "max_hr": 85,
+            "avg_hrv": 45,
+            "avg_spo2": 98.0,
+            "min_spo2": 96.5,
+            "dominant_activity_level": 1,
+            "sample_count": -5  # invalid
+        }
+    ],
+    "alerts": []
+}
+
+run_test_case(
+    name="上傳 sample_count < 0 的健康紀錄 (預期 400 錯誤)",
+    path="/sync/batch",
+    data=invalid_sample_payload,
+    headers=auth_header,
+    expected_status=400
+)
+
+
+# ─── 邊緣測試案例 9. status_history 空陣列被拒絕 (預期 400) ────────────────────────
+
+empty_status_hist_payload = {
+    "device_id": "edge_device_001",
+    "sync_started_at": datetime.now(timezone.utc).isoformat(),
+    "periodic_health_records": [],
+    "alerts": [
+        {
+            "alert_id": "alert_test_empty_hist_001",
+            "alert_type": "spo2_risk",
+            "trigger_reason": "Test",
+            "initial_risk_score": 5,
+            "max_risk_score": 5,
+            "max_severity_level": "中度",
+            "first_occurred_at": datetime.now(timezone.utc).isoformat(),
+            "resolved_at": None,
+            "status_change_count": 0,
+            "status_history": []  # empty
+        }
+    ]
+}
+
+run_test_case(
+    name="上傳 status_history 空陣列的預警紀錄 (預期 400 錯誤)",
+    path="/sync/batch",
+    data=empty_status_hist_payload,
+    headers=auth_header,
+    expected_status=400
+)
+
+
+# ─── 邊緣測試案例 10. status_change_count 不一致被拒絕 (預期 400) ─────────────────
+
+mismatch_count_payload = {
+    "device_id": "edge_device_001",
+    "sync_started_at": datetime.now(timezone.utc).isoformat(),
+    "periodic_health_records": [],
+    "alerts": [
+        {
+            "alert_id": "alert_test_mismatch_count_001",
+            "alert_type": "spo2_risk",
+            "trigger_reason": "Test",
+            "initial_risk_score": 5,
+            "max_risk_score": 5,
+            "max_severity_level": "中度",
+            "first_occurred_at": datetime.now(timezone.utc).isoformat(),
+            "resolved_at": None,
+            "status_change_count": 2,  # mismatch with 1 history item
+            "status_history": [
+                {
+                    "status": "注意",
+                    "risk_score": 5,
+                    "status_time": datetime.now(timezone.utc).isoformat(),
+                    "status_description": "SpO2 偏低"
+                }
+            ]
+        }
+    ]
+}
+
+run_test_case(
+    name="上傳 status_change_count 與 status_history 長度不符的預警紀錄 (預期 400 錯誤)",
+    path="/sync/batch",
+    data=mismatch_count_payload,
+    headers=auth_header,
+    expected_status=400
+)
+
 
 print("\n================== 所有邊緣測試案例成功通過！ ==================")

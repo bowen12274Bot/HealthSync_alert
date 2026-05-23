@@ -117,7 +117,6 @@ POST /sync/batch
 
 ```json
 {
-  "user_id": "string",
   "device_id": "string",
   "sync_started_at": "datetime",
   "periodic_health_records": [],
@@ -129,11 +128,13 @@ POST /sync/batch
 
 | 欄位 | 意義 |
 | --- | --- |
-| `user_id` | 本次同步資料所屬使用者 |
 | `device_id` | 來源手機裝置識別 |
 | `sync_started_at` | 手機端本輪同步開始時間 |
 | `periodic_health_records` | 本輪待同步的週期健康紀錄 |
 | `alerts` | 本輪待同步的完整預警資料 |
+
+> [!NOTE]
+> 使用者身分歸屬不再經由 Request Payload 中的 `user_id` 傳遞，而是一律由 `Authorization` Header 中攜帶的 JWT token 決定。伺服器解碼 Token 後取得 `user_account_id`，並自動組裝為 `user_{user_account_id}` 形式寫入資料庫的 `user_id` 欄位，以確保使用者隔離與安全性。
 
 ### 5.1 正式 request 範例
 
@@ -141,7 +142,6 @@ POST /sync/batch
 
 ```json
 {
-  "user_id": "user_001",
   "device_id": "device_android_001",
   "sync_started_at": "2026-05-16T10:20:15+08:00",
   "periodic_health_records": [
@@ -268,12 +268,12 @@ POST /sync/batch
 ```text
 1. 接收 POST /sync/batch
 2. 驗證 request schema
-3. 驗證 user_id 與 device_id
-4. 驗證時間格式與欄位完整性
-5. 驗證 periodic_health_records 與 alerts 資料格式
+3. 從 JWT Token 解析並驗證身分 (決定 user_account_id)
+4. 驗證時間格式與欄位完整性 (所有 datetime 強制為 UTC 且帶時區資訊)
+5. 驗證 periodic_health_records 與 alerts 資料格式與語意一致性
 6. 開啟資料庫 transaction
-7. 寫入週期健康紀錄
-8. 寫入預警歷史表
+7. 寫入週期健康紀錄 (自動以 user_{user_account_id} 作為 user_id 寫入)
+8. 寫入預警歷史表 (同時寫入 user_account_id 與 user_id)
 9. 全部成功則 commit
 10. 任一步驟失敗則 rollback
 11. 回傳整批成功或整批失敗
@@ -286,12 +286,15 @@ POST /sync/batch
 建議至少驗證：
 
 - request JSON 結構正確
-- `user_id` 有效
-- `device_id` 合法
-- 時間欄位格式正確
+- JWT Token 有效且對應的帳號處於 active 狀態
+- 時間欄位格式正確 (不得接受 naive datetime，時區必須為 UTC/offset 0)
 - `window_start < window_end`
 - `sample_count >= 0`
-- `status_history` 結構完整
+- `status_history` 結構完整且不可為空
+- `status_change_count == len(status_history)`
+- `max_risk_score >= max(status_history[].risk_score)`
+- `first_occurred_at <= status_history[].status_time`
+- 若 `resolved_at` 存在，需滿足解除規則並在狀態歷程中包含 '已解除' 或 '已轉移' 的狀態
 
 本階段不處理：
 
@@ -311,7 +314,7 @@ POST /sync/batch
 user_id + window_start + window_end
 ```
 
-作為主要去重鍵。
+作為主要去重鍵（註：資料表中的 `user_id` 在寫入前由伺服器根據驗證後的 JWT Token 動態填充為 `user_{user_account_id}`）。
 
 用途：
 
@@ -464,7 +467,7 @@ alert_id
 
 2. 手機端送出 POST /sync/batch
 
-3. 伺服器驗證 request schema 與使用者資訊
+3. 伺服器驗證 request schema 並從 JWT Token 解析使用者資訊
 
 4. 伺服器開啟 transaction
 
