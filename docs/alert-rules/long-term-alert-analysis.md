@@ -44,6 +44,7 @@
 - 由掃描器定期檢查固定分析視窗
 - 重新呼叫長期預警分析模組
 - 依最新分析結果對 `long_term_alerts` 做新增、更新或刪除
+- 再補上本次分析所使用原始資料的追蹤關聯
 
 ## 3. 分析資料來源
 
@@ -60,6 +61,7 @@
 | --- | --- |
 | `periodic_health_record` | 用於整體趨勢分析 |
 | `alert_history` | 用於預警歷史模式分析 |
+| `periodic_health_record_analysis_statuses` | 用於判斷週期健康資料是否屬於未分析資料 |
 
 補充原則如下：
 
@@ -71,6 +73,7 @@
 ```text
 periodic_health_record 是目前已明確可穩定同步到伺服器的長期健康資料主體。
 alert_history 是目前已明確可穩定同步到伺服器的完整預警事件歷史。
+periodic_health_record_analysis_statuses 用來保存 periodic_health_record 對長期分析的已分析狀態。
 ```
 
 ## 4. 時間基準與分析視窗
@@ -288,6 +291,11 @@ coverage_ratio =
 該視窗範圍內是否存在未分析的 alert_history
 ```
 
+其中：
+
+- `periodic_health_record` 的未分析狀態，應從 `periodic_health_record_analysis_statuses` 判斷
+- `alert_history` 的未分析判定方式維持由預警歷史模組自行控制
+
 也就是：
 
 - 對整體趨勢分析：
@@ -326,6 +334,7 @@ coverage_ratio =
 - 不需要提前判斷使用者某天沒有資料是「真的沒量到」還是「尚未同步」
 - 伺服器只以自己目前已收到的資料作為分析依據
 - 若第一次分析時資料尚未完全到齊，後續仍可修正結果
+- `periodic_health_record` 是否已分析可由 `periodic_health_record_analysis_statuses` 維護
 
 因此：
 
@@ -992,6 +1001,10 @@ history_risk_score >= 60
 - 則應重新呼叫長期預警分析模組
 - 再由分析模組的新輸出結果更新原有分析視窗對應的長期預警結果
 - 不應單純因重算而重複新增多筆相同視窗、相同分析類型的長期預警
+- 在 `long_term_alerts` 完成新增或更新後，應再補上本次分析實際使用的 `periodic_health_record` 關聯
+- `long_term_analysis_links` 的用途是追蹤與除錯，不是分析前置條件
+- 若某筆長期預警因重算而更新，應同步調整其對應的 `long_term_analysis_links`
+- 若某筆長期預警因重算後不再成立而被刪除或撤回，應同步移除或清理其對應關聯
 
 建議在 `long_term_alerts` 至少保存：
 
@@ -1005,6 +1018,9 @@ history_risk_score >= 60
 
 - `alert_type` 可區分趨勢型或歷史模式型長期預警
 - `trigger_reason` 應描述是哪一類證據促成該次長期預警成立
+- `risk_level` 可由 `risk_score` 推導，因此不必額外落庫
+- 視窗語意由 `analysis_start` 與 `analysis_end` 表達，因此不必額外存 `window_type`
+- 分析類型屬於分析模組執行時的概念；結果落表時只需保存最終 `alert_type`
 
 ## 14. 完整分析流程
 
@@ -1024,7 +1040,7 @@ history_risk_score >= 60
 
 5. 判斷是否觸發整體趨勢分析
    - 若 periodic_health_record 覆蓋率達分析門檻
-   - 且存在未分析的 periodic_health_record
+   - 且從 periodic_health_record_analysis_statuses 判斷存在未分析的 periodic_health_record
    - 則重新呼叫整體趨勢分析模組
 
 6. 讀取對應自然週或自然月區間內的 periodic_health_record
@@ -1038,6 +1054,8 @@ history_risk_score >= 60
 8. 依整體趨勢分析結果判斷是否寫入或更新 long_term_alerts
    - trend_risk_score >= 60 => 寫入或更新趨勢型長期預警
    - trend_risk_score < 60 且原本已有結果 => 刪除、標記失效、撤回或以等價方式更新
+   - 若已寫入或更新趨勢型長期預警，則補上本次使用的 periodic_health_record 關聯
+   - 並同步更新 periodic_health_record_analysis_statuses 中對應的已分析狀態
 
 9. 判斷是否觸發預警歷史模式分析
    - 若存在未分析的 alert_history
@@ -1054,6 +1072,7 @@ history_risk_score >= 60
 12. 依預警歷史模式分析結果判斷是否寫入或更新 long_term_alerts
     - history_risk_score >= 60 => 寫入或更新歷史模式型長期預警
     - history_risk_score < 60 且原本已有結果 => 刪除、標記失效、撤回或以等價方式更新
+    - 若已寫入或更新歷史模式型長期預警，且本階段有保存原始資料追蹤需求，則同步維護對應關聯
 ```
 
 ## 15. 第一版設計邊界
@@ -1083,14 +1102,15 @@ history_risk_score >= 60
 window_end 由每日掃描器根據 scan_time 與自然週 / 自然月規則直接推導，不從資料表反查。
 掃描器每日於 00:00:00+08:00 執行，並固定推導上週與上月分析視窗。
 整體趨勢分析與預警歷史模式分析分開判斷是否觸發，不共用同一組前置條件。
-整體趨勢分析只有在 periodic_health_record 覆蓋率達門檻，且視窗內存在未分析的 periodic_health_record 時才會執行。
+整體趨勢分析只有在 periodic_health_record 覆蓋率達門檻，且從 periodic_health_record_analysis_statuses 判斷視窗內存在未分析的 periodic_health_record 時才會執行。
 整體趨勢分析主要根據 periodic_health_record 計算 HR、HRV、SpO2 的長期風險分數。
 預警歷史模式分析不設最小事件數門檻，只要視窗內存在未分析的 alert_history 就可執行。
 預警歷史模式分析主要根據 alert_history 計算事件次數、嚴重度、持續時間與集中度風險。
 兩個分析模組各自獨立計算 risk_score，並依最新分析結果對 long_term_alerts 做新增、更新或刪除。
+long_term_analysis_links 應在 long_term_alerts 寫入或更新後，再補上本次實際使用的原始資料關聯，作為追蹤與除錯用途。
 長期預警風險分數採 0~100，並映射為 無 / 觀察 / 注意 / 警戒 四級。
 ```
 
 最簡短版本如下：
 
-> 伺服器端每日於 `00:00:00+08:00` 執行掃描器，直接推導上週與上月分析視窗；整體趨勢分析需在 `periodic_health_record` 覆蓋率達週分析 `75%` 或月分析 `70%` 門檻，且該視窗存在未分析的週期健康資料時才執行；預警歷史模式分析則不設最小事件數門檻，只要存在未分析的預警歷史資料就可執行，最後再依最新分數對 `long_term_alerts` 做新增、更新或刪除。
+> 伺服器端每日於 `00:00:00+08:00` 執行掃描器，直接推導上週與上月分析視窗；整體趨勢分析需在 `periodic_health_record` 覆蓋率達週分析 `75%` 或月分析 `70%` 門檻，且從 `periodic_health_record_analysis_statuses` 判斷該視窗存在未分析的週期健康資料時才執行；預警歷史模式分析則不設最小事件數門檻，只要存在未分析的預警歷史資料就可執行，最後再依最新分數對 `long_term_alerts` 做新增、更新或刪除，並補上原始資料追蹤關聯。
