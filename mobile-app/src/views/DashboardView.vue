@@ -286,6 +286,7 @@ function openSimulationView(): void {
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 
+import AppIcon from '@/components/AppIcon.vue'
 import AppShell from '@/components/AppShell.vue'
 import { useConnectionStatus } from '@/composables/useConnectionStatus'
 import { useLatestHealthRecord } from '@/composables/useLatestHealthRecord'
@@ -296,16 +297,22 @@ const { isOnline, isPinging, isRetrying, retryCountdownSeconds } = useConnection
 const router = useRouter()
 const { currentScenarioName, simulationStatusText } = useSimulationControl()
 const { heartRate, hrv, spO2 } = useLatestHealthRecord()
-const { isHealthy, alertLevel, alertTitle, alertSubtitle, alertDuration } = useAlertStatus()
+const { hasActiveAlert, isHealthy, alertLevel, alertTitle, alertSubtitle, alertDuration, refreshAlertStatus } =
+  useAlertStatus()
 
 function openSimulationView(): void {
   void router.push({ name: 'data-simulation' })
 }
 
-function openAlertView(): void {
-  if (!isHealthy.value) {
-    void router.push({ name: 'alert-display-live' })
+async function openAlertView(): Promise<void> {
+  await refreshAlertStatus()
+  if (hasActiveAlert.value) {
+    await router.push({ name: 'alert-display-live' })
   }
+}
+
+function statusIconName(): 'warning' | 'check' {
+  return isHealthy.value ? 'check' : 'warning'
 }
 </script>
 
@@ -325,7 +332,13 @@ function openAlertView(): void {
         :type="isHealthy ? undefined : 'button'"
         @click="openAlertView"
       >
-        <div class="status-mark" :class="{ 'is-healthy': isHealthy, [alertLevel]: !isHealthy }"></div>
+        <div class="status-mark" :class="{ 'is-healthy': isHealthy, [alertLevel]: !isHealthy }">
+          <AppIcon
+            :name="statusIconName()"
+            :size="isHealthy ? 24 : 26"
+            :stroke-width="isHealthy ? 2.6 : 2.2"
+          />
+        </div>
         <div class="status-copy">
           <p class="section-label">健康狀態</p>
           <strong>{{ alertTitle }}</strong>
@@ -439,53 +452,45 @@ function openAlertView(): void {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  position: relative;
   flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
   transition: all 0.3s ease;
-}
-
-.status-mark::before,
-.status-mark::after {
-  content: '';
-  position: absolute;
-  background: #fff;
-  border-radius: 999px;
-}
-
-.status-mark::before {
-  width: 16px;
-  height: 4px;
-  left: 11px;
-  top: 21px;
-  transform: rotate(45deg);
-}
-
-.status-mark::after {
-  width: 24px;
-  height: 4px;
-  right: 8px;
-  top: 18px;
-  transform: rotate(-45deg);
+  color: #fff;
 }
 
 .status-mark.is-healthy {
-  background: linear-gradient(180deg, #62c655 0%, #37a249 100%);
-  box-shadow: 0 4px 12px rgba(98, 198, 85, 0.3);
+  background: linear-gradient(180deg, #63c75b 0%, #41ae4d 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 6px 14px rgba(82, 180, 77, 0.28);
 }
 
 .status-mark.warning {
-  background: linear-gradient(180deg, #ffc107 0%, #ff9800 100%);
-  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.3);
+  width: 48px;
+  height: 48px;
+  border-radius: 0;
+  background: none;
+  color: #f39815;
+  box-shadow: none;
 }
 
 .status-mark.critical {
-  background: linear-gradient(180deg, #ff9800 0%, #f44336 100%);
-  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+  width: 48px;
+  height: 48px;
+  border-radius: 0;
+  background: none;
+  color: #eb8d12;
+  box-shadow: none;
 }
 
 .status-mark.severe {
-  background: linear-gradient(180deg, #f44336 0%, #c62828 100%);
-  box-shadow: 0 4px 12px rgba(198, 40, 40, 0.5);
+  width: 48px;
+  height: 48px;
+  border-radius: 0;
+  background: none;
+  color: #dc6a29;
+  box-shadow: none;
 }
 
 .status-copy {

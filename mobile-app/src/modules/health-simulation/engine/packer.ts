@@ -20,6 +20,14 @@ async function getZstd() {
   })
 }
 
+function uint8ArrayToBase64(bytes: Uint8Array | number[]): string {
+  let binary = ''
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+  return btoa(binary)
+}
+
 // ─── 常數 ────────────────────────────────────────────────────────────────────
 
 /** 視窗大小：10 分鐘 (毫秒) */
@@ -197,6 +205,7 @@ export async function packPendingWindows(): Promise<void> {
     // MsgPack + ZSTD
     const msgpackBytes = encode(rawDataArray)
     const compressedBytes = zstd.compress(msgpackBytes)
+    const sqliteBlobValue = uint8ArrayToBase64(compressedBytes)
 
     const recordId = crypto.randomUUID()
 
@@ -217,7 +226,7 @@ export async function packPendingWindows(): Promise<void> {
         modeAct,
         N,
         'pending',
-        compressedBytes,
+        sqliteBlobValue,
         new Date().toISOString()
       ]
     )

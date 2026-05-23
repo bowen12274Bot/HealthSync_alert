@@ -1,14 +1,18 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.alerts import router as alerts_router
 from app.api.health import router as health_router
 from app.api.sync import router as sync_router
+from app.api.trends import router as trends_router
 from app.core.config import settings
 from app.core.database import SessionLocal, create_db_tables
 from app.core.seed import seed_demo_data
+from app.long_term_alerts.scheduler import run_daily_long_term_alert_scheduler
 
 
 @asynccontextmanager
@@ -22,7 +26,14 @@ async def lifespan(_: FastAPI):
             seed_demo_data(db)
         finally:
             db.close()
+
+    scanner_task = asyncio.create_task(run_daily_long_term_alert_scheduler())
     yield
+    scanner_task.cancel()
+    try:
+        await scanner_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(
@@ -58,4 +69,6 @@ def read_root() -> dict[str, str]:
 
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(alerts_router)
 app.include_router(sync_router)
+app.include_router(trends_router)

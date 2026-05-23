@@ -1,11 +1,12 @@
 import base64
 import json
 from datetime import datetime, timezone
-from typing import Annotated, Optional
+from typing import Annotated, Optional, TypedDict, cast
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -13,12 +14,50 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.alert_history import AlertHistory
 from app.models.periodic_health_record import PeriodicHealthRecord
-from app.models.auth.user_account import UserAccount
+from app.models.periodic_health_record_analysis_status import (
+    PeriodicHealthRecordAnalysisStatus,
+)
 from app.api.auth import get_authenticated_session, AuthenticatedSession
 
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+class PeriodicHealthRecordInsertRow(TypedDict):
+    user_id: str
+    device_id: str
+    window_start: datetime
+    window_end: datetime
+    avg_hr: int
+    min_hr: int
+    max_hr: int
+    avg_hrv: int
+    avg_spo2: float
+    min_spo2: float
+    dominant_activity_level: int
+    sample_count: int
+    steps: int
+    raw_data_payload: bytes | None
+
+
+class AlertHistoryInsertRow(TypedDict):
+    user_id: str
+    user_account_id: int
+    alert_source: str
+    alert_id: str
+    alert_type: str
+    max_risk_score: int
+    max_severity_level: str
+    trigger_reason: str
+    first_occurred_at: datetime
+    last_abnormal_at: datetime
+    resolved_at: datetime | None
+    duration: int | None
+    status_change_count: int
+    is_worsened: bool
+    status_history_payload: str
+    status: str
 
 
 def validate_utc_datetime(dt: Optional[datetime], field_name: str) -> None:
@@ -72,7 +111,9 @@ class SyncBatchRequest(BaseModel):
     device_id: str
     sync_started_at: datetime
     periodic_health_records: list[PeriodicHealthRecordSchema]
-    alerts: list[AlertSyncSchema] = Field(default_factory=list)
+    alerts: list[AlertSyncSchema] = Field(
+        default_factory=lambda: cast(list[AlertSyncSchema], [])
+    )
 
 
 class SyncBatchResponse(BaseModel):
@@ -101,7 +142,7 @@ def sync_batch(
 
         # Process Periodic Health Records
         if request.periodic_health_records:
-            records_to_insert = []
+            records_to_insert: list[PeriodicHealthRecordInsertRow] = []
             for record in request.periodic_health_records:
                 # Time validation
                 validate_utc_datetime(record.window_start, "window_start")
@@ -144,13 +185,41 @@ def sync_batch(
                 index_elements=['user_id', 'window_start', 'window_end']
             )
             result = db.execute(stmt)
-            accepted_health_record_count = result.rowcount
+            accepted_health_record_count = cast(
+                int,
+                getattr(result, "rowcount", -1),
+            )
             if accepted_health_record_count == -1:
                 accepted_health_record_count = len(records_to_insert)
 
+            # Ensure every periodic health record has a paired analysis status row.
+            window_pairs: list[tuple[datetime, datetime]] = [
+                (record["window_start"], record["window_end"])
+                for record in records_to_insert
+            ]
+            status_target_record_ids = db.execute(
+                select(PeriodicHealthRecord.id).where(
+                    PeriodicHealthRecord.user_id == db_user_id,
+                    tuple_(
+                        PeriodicHealthRecord.window_start,
+                        PeriodicHealthRecord.window_end,
+                    ).in_(window_pairs),
+                )
+            ).scalars().all()
+
+            if status_target_record_ids:
+                status_stmt = insert(PeriodicHealthRecordAnalysisStatus).values([
+                    {"periodic_health_record_id": record_id}
+                    for record_id in status_target_record_ids
+                ])
+                status_stmt = status_stmt.on_conflict_do_nothing(
+                    index_elements=["periodic_health_record_id"]
+                )
+                db.execute(status_stmt)
+
         # Process alerts
         if request.alerts:
-            alerts_to_insert = []
+            alerts_to_insert: list[AlertHistoryInsertRow] = []
             for alert in request.alerts:
                 # Time validation
                 validate_utc_datetime(alert.first_occurred_at, "first_occurred_at")
@@ -218,7 +287,10 @@ def sync_batch(
                 index_elements=['alert_id']
             )
             result = db.execute(stmt)
-            accepted_alert_count = result.rowcount
+            accepted_alert_count = cast(
+                int,
+                getattr(result, "rowcount", -1),
+            )
             if accepted_alert_count == -1:
                 accepted_alert_count = len(alerts_to_insert)
         else:

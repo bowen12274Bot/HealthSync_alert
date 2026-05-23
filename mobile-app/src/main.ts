@@ -11,16 +11,15 @@ import { useAuthStore } from './stores/auth'
 async function bootstrap(): Promise<void> {
   const app = createApp(App)
   app.use(pinia)
+  const authStore = useAuthStore()
 
   if (Capacitor.isNativePlatform()) {
     await getDatabaseConnection()
   }
 
+  await authStore.initialize()
   app.use(router)
   app.mount('#app')
-
-  const authStore = useAuthStore()
-  void authStore.initialize()
 }
 
 void bootstrap()

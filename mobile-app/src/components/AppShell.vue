@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppIcon from '@/components/AppIcon.vue'
+
 defineProps<{
   title: string
   showProfileShortcut?: boolean
@@ -28,19 +30,19 @@ defineProps<{
 
           <nav class="bottom-nav" aria-label="主導航">
             <RouterLink class="nav-link" to="/" exact-active-class="is-active">
-              <span class="nav-icon">O</span>
+              <span class="nav-icon"><AppIcon name="dashboard" :size="20" /></span>
               <span>儀表板</span>
             </RouterLink>
             <RouterLink class="nav-link" to="/trends" exact-active-class="is-active">
-              <span class="nav-icon">/</span>
+              <span class="nav-icon"><AppIcon name="trends" :size="20" /></span>
               <span>趨勢報表</span>
             </RouterLink>
             <RouterLink class="nav-link" to="/alerts" exact-active-class="is-active">
-              <span class="nav-icon">!</span>
+              <span class="nav-icon"><AppIcon name="alerts" :size="20" /></span>
               <span>預警紀錄</span>
             </RouterLink>
             <RouterLink class="nav-link" to="/settings" exact-active-class="is-active">
-              <span class="nav-icon">=</span>
+              <span class="nav-icon"><AppIcon name="settings" :size="20" /></span>
               <span>設定</span>
             </RouterLink>
           </nav>
@@ -194,8 +196,6 @@ defineProps<{
   place-items: center;
   background: rgba(23, 79, 150, 0.08);
   color: #174f96;
-  font-size: 0.85rem;
-  line-height: 1;
 }
 
 @media (max-width: 480px) {

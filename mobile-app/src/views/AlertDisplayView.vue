@@ -1,21 +1,55 @@
 <script setup lang="ts">
 import AppShell from '@/components/AppShell.vue'
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import AppIcon from '@/components/AppIcon.vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAlertStatus } from '@/composables/useAlertStatus'
+import { markConnectionUnavailable, useConnectionStatus } from '@/composables/useConnectionStatus'
 import { useLatestHealthRecord } from '@/composables/useLatestHealthRecord'
+import { AlertHistoryServiceError } from '@/services/alertHistoryService'
+import { useAuthStore } from '@/stores/auth'
+import { useAlertHistoryStore } from '@/stores/alertHistory'
 
 const route = useRoute()
-const { alertData, isHealthy, alertLevel, alertTitle, alertSubtitle, alertDuration } =
+const router = useRouter()
+const { alertData, isHealthy, alertLevel, alertTitle, alertSubtitle, alertDuration, refreshAlertStatus } =
   useAlertStatus()
 const { heartRate, hrv, spO2 } = useLatestHealthRecord()
+const authStore = useAuthStore()
+const alertHistoryStore = useAlertHistoryStore()
+const { isOnline } = useConnectionStatus()
 
 const isHistoryMode = computed(() => route.meta.alertMode === 'history')
+const recordId = computed(() => String(route.params.recordId ?? ''))
+const historyDetail = computed(() => (
+  isHistoryMode.value && recordId.value ? alertHistoryStore.getDetail(recordId.value) : null
+))
+const isHistoryLoading = ref(false)
+const historyErrorMessage = ref('')
 const pageTitle = computed(() => (isHistoryMode.value ? '預警詳情' : '即時預警'))
+const historyAlertLevel = computed(() => {
+  if (historyDetail.value === null) return 'warning'
+  switch (historyDetail.value.displaySeverity) {
+    case 'mild':
+      return 'warning'
+    case 'moderate':
+      return 'critical'
+    default:
+      return 'severe'
+  }
+})
+const showHealthyState = computed(() => !isHistoryMode.value && isHealthy.value)
+
+type AlertVisualIcon = 'check' | 'droplet' | 'heart-pulse' | 'wave' | 'warning'
+type AlertInfoIcon = 'warning' | 'info' | 'calendar' | 'sync' | 'check'
+
+// 下半部資訊列 icon 統一尺寸，之後只要改這裡
+const META_ICON_SIZE = 18
+const META_ICON_STROKE_WIDTH = 2.25
 
 // ── 嚴重程度對應標籤 ──────────────────────────────────────
 const statusChipLabel = computed(() => {
-  if (isHistoryMode.value) return '已解除'
+  if (isHistoryMode.value) return historyDetail.value?.statusLabel ?? '預警紀錄'
   switch (alertLevel.value) {
     case 'warning':
       return '觀察中'
@@ -30,6 +64,9 @@ const statusChipLabel = computed(() => {
 
 // ── 預警類型中文名稱 ──────────────────────────────────────
 const alertTypeName = computed(() => {
+  if (isHistoryMode.value) {
+    return historyDetail.value?.alertTypeLabel ?? '預警類型'
+  }
   switch (alertData.value.alertType) {
     case 'spo2_risk':
       return '血氧風險'
@@ -41,6 +78,94 @@ const alertTypeName = computed(() => {
       return '生理異常'
   }
 })
+
+function compactCopy(text: string, maxLength = 42): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  const firstSegment = normalized.split(/。|；|,|，/)[0]?.trim() ?? normalized
+  if (firstSegment.length <= maxLength) {
+    return firstSegment
+  }
+  return `${firstSegment.slice(0, maxLength).trim()}...`
+}
+
+const heroSummary = computed(() => {
+  if (isHistoryMode.value) {
+    const detail = historyDetail.value
+    if (detail === null) {
+      return '正在載入預警詳情'
+    }
+
+    if (detail.sourceType === 'long_term') {
+      return '依長時間分析結果判定此段期間存在持續風險'
+    }
+
+    switch (detail.alertType) {
+      case 'spo2_risk':
+        return 'SpO2 曾低於安全範圍，建議回顧當時身體狀況'
+      case 'heart_rate_high':
+        return '心率曾高於安全區間，建議回顧當時活動狀態'
+      case 'physiological_stress':
+        return '生理壓力曾持續偏高，請留意近期恢復狀態'
+      default:
+        return '此筆預警已完成記錄，可查看下方詳細資訊'
+    }
+  }
+
+  if (showHealthyState.value) {
+    return '目前所有生理指標均在正常範圍內'
+  }
+
+  switch (alertData.value.alertType) {
+    case 'spo2_risk':
+      return 'SpO2 指標已低於安全範圍，建議立即確認身體狀況'
+    case 'physiological_stress':
+      return '生理壓力持續偏高，請留意目前活動與恢復狀態'
+    case 'combined_physiological_risk':
+      return '多項生理指標同時異常，建議立即查看詳細資訊'
+    default:
+      return compactCopy(alertSubtitle.value, 38)
+  }
+})
+
+function resolveAlertVisualIcon(alertType: string, sourceType?: 'realtime' | 'long_term'): AlertVisualIcon {
+  if (sourceType === 'long_term') {
+    return 'wave'
+  }
+
+  switch (alertType) {
+    case 'spo2_risk':
+      return 'droplet'
+    case 'heart_rate_high':
+      return 'heart-pulse'
+    case 'physiological_stress':
+    case 'combined_physiological_risk':
+      return 'wave'
+    default:
+      return 'warning'
+  }
+}
+
+const heroIconName = computed<AlertVisualIcon>(() => {
+  if (showHealthyState.value) {
+    return 'check'
+  }
+
+  if (isHistoryMode.value) {
+    return resolveAlertVisualIcon(
+      historyDetail.value?.alertType ?? '',
+      historyDetail.value?.sourceType,
+    )
+  }
+
+  return resolveAlertVisualIcon(alertData.value.alertType ?? '', 'realtime')
+})
+
+type AlertInfoItem = {
+  label: string
+  value: string
+  icon: AlertInfoIcon
+}
 
 // ── 格式化時間 ────────────────────────────────────────────
 function formatTime(iso: string | null): string {
@@ -59,6 +184,9 @@ function formatTime(iso: string | null): string {
 
 // ── 風險分數對應文字 ──────────────────────────────────────
 const riskScoreLabel = computed(() => {
+  if (isHistoryMode.value) {
+    return historyDetail.value?.displaySeverityLabel ?? '—'
+  }
   const score = alertData.value.riskScore
   if (score <= 2) return '低'
   if (score <= 4) return '中'
@@ -69,21 +197,35 @@ const riskScoreLabel = computed(() => {
 // ── 生命表格項目（即時模式）────────────────────────────────
 const alertInfoItems = computed(() => {
   if (isHistoryMode.value) {
+    if (historyDetail.value === null) {
+      return []
+    }
+
+    if (historyDetail.value.sourceType === 'long_term') {
+      return [
+        { label: '預警類型', value: historyDetail.value.alertTypeLabel, icon: 'warning' },
+        { label: '目前狀態', value: historyDetail.value.statusLabel, icon: 'info' },
+        { label: '風險等級', value: historyDetail.value.displaySeverityLabel, icon: 'warning' },
+        { label: '分析時間範圍', value: historyDetail.value.timeRangeLabel, icon: 'calendar' },
+        { label: '最後更新時間', value: formatTime(historyDetail.value.updatedAt), icon: 'calendar' },
+      ] satisfies AlertInfoItem[]
+    }
+
     return [
-      { label: '預警類型', value: alertTypeName.value },
-      { label: '最終狀態', value: alertData.value.status ?? '已解除' },
-      { label: '最高風險評分', value: `${alertData.value.riskScore} / 9 分` },
-      { label: '開始發生時間', value: formatTime(alertData.value.detectionStartTime) },
-      { label: '解除時間', value: formatTime(alertData.value.lastResolvedTime) },
-    ]
+      { label: '預警類型', value: historyDetail.value.alertTypeLabel, icon: 'warning' },
+      { label: '最終狀態', value: historyDetail.value.statusLabel, icon: 'check' },
+      { label: '最高風險評分', value: `${historyDetail.value.maxRiskScore} / 9 分`, icon: 'warning' },
+      { label: '開始發生時間', value: formatTime(historyDetail.value.firstOccurredAt), icon: 'calendar' },
+      { label: '解除時間', value: formatTime(historyDetail.value.resolvedAt), icon: 'calendar' },
+    ] satisfies AlertInfoItem[]
   }
   return [
-    { label: '預警類型', value: alertTypeName.value },
-    { label: '目前狀態', value: alertData.value.status ?? '觀察中' },
-    { label: '風險評分', value: `${alertData.value.riskScore} / 9 分（${riskScoreLabel.value}）` },
-    { label: '開始發生時間', value: formatTime(alertData.value.detectionStartTime) },
-    { label: '首次觸發時間', value: formatTime(alertData.value.firstOccurredAt) },
-  ]
+    { label: '預警類型', value: alertTypeName.value, icon: 'warning' },
+    { label: '目前狀態', value: alertData.value.status ?? '觀察中', icon: 'info' },
+    { label: '風險評分', value: `${alertData.value.riskScore} / 9 分（${riskScoreLabel.value}）`, icon: 'warning' },
+    { label: '開始發生時間', value: formatTime(alertData.value.detectionStartTime), icon: 'calendar' },
+    { label: '首次觸發時間', value: formatTime(alertData.value.firstOccurredAt), icon: 'calendar' },
+  ] satisfies AlertInfoItem[]
 })
 
 // ── 心率趨勢（簡易判斷） ──────────────────────────────────
@@ -110,6 +252,72 @@ const hrvTrendLabel = computed(() => {
   if (val > 120) return '偏高 ↑'
   return '正常'
 })
+
+const historyTriggerReasons = computed(() => {
+  if (historyDetail.value === null) return []
+
+  return historyDetail.value.triggerReason
+    .split(/,|\/|\n/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+})
+
+async function loadHistoryDetail(force = false): Promise<void> {
+  if (!isHistoryMode.value || !recordId.value) {
+    return
+  }
+
+  if (!isOnline.value) {
+    historyErrorMessage.value = '預警詳情需連線後才能查看'
+    return
+  }
+
+  if (!authStore.token) {
+    historyErrorMessage.value = '登入狀態已失效，請重新登入'
+    return
+  }
+
+  isHistoryLoading.value = true
+  historyErrorMessage.value = ''
+
+  try {
+    await alertHistoryStore.ensureDetail(authStore.token, recordId.value, force)
+  } catch (error) {
+    if (error instanceof AlertHistoryServiceError) {
+      if (error.code === 'unauthorized') {
+        await authStore.logout()
+        void router.push({ name: 'login' })
+        return
+      }
+      if (error.code === 'network') {
+        markConnectionUnavailable()
+      }
+      historyErrorMessage.value = error.message
+      return
+    }
+    historyErrorMessage.value = '取得預警詳情失敗，請稍後再試'
+  } finally {
+    isHistoryLoading.value = false
+  }
+}
+
+onMounted(() => {
+  if (isHistoryMode.value) {
+    void loadHistoryDetail()
+    return
+  }
+
+  void refreshAlertStatus()
+})
+
+watch(
+  () => recordId.value,
+  () => {
+    if (isHistoryMode.value) {
+      void loadHistoryDetail()
+    }
+  },
+)
 </script>
 
 <template>
@@ -117,24 +325,29 @@ const hrvTrendLabel = computed(() => {
     <section class="alert-display-layout">
 
       <!-- ── 上半段：警報橫幅 + 指標卡 + 觸發原因 ── -->
-      <section class="alert-hero" :class="alertLevel">
+      <section class="alert-hero" :class="isHistoryMode ? historyAlertLevel : alertLevel">
         <div class="alert-banner">
-          <div class="alert-icon" :class="alertLevel">
-            <span v-if="isHealthy">✓</span>
-            <span v-else>!</span>
+          <div class="alert-icon" :class="isHistoryMode ? historyAlertLevel : alertLevel">
+            <AppIcon :name="heroIconName" :size="27" :stroke-width="2.65" />
           </div>
           <div>
-            <p class="section-label" :class="alertLevel">
-              {{ isHealthy ? '健康狀態良好' : '發現異常指標' }}
+            <p class="section-label" :class="isHistoryMode ? historyAlertLevel : alertLevel">
+              {{
+                isHistoryMode
+                  ? historyDetail?.historyTypeLabel ?? '歷史預警'
+                  : showHealthyState
+                    ? '健康狀態良好'
+                    : '發現異常指標'
+              }}
             </p>
-            <strong>{{ alertTitle }}</strong>
-            <span>{{ alertSubtitle }}</span>
+            <strong>{{ isHistoryMode ? historyDetail?.title ?? '預警詳情' : alertTitle }}</strong>
+            <span>{{ heroSummary }}</span>
           </div>
-          <div class="pending-tag" :class="alertLevel">{{ statusChipLabel }}</div>
+          <div class="pending-tag" :class="isHistoryMode ? historyAlertLevel : alertLevel">{{ statusChipLabel }}</div>
         </div>
 
         <!-- 即時指標卡 -->
-        <div class="indicator-grid">
+        <div v-if="!isHistoryMode" class="indicator-grid">
           <article class="indicator-card heart">
             <p>HR</p>
             <strong>{{ heartRate }} <small>bpm</small></strong>
@@ -153,13 +366,27 @@ const hrvTrendLabel = computed(() => {
         </div>
 
         <!-- 持續時間膠囊 -->
-        <div class="duration-pill" :class="alertLevel">
+        <div v-if="!isHistoryMode" class="duration-pill" :class="alertLevel">
           <span>{{ alertDuration.label }}</span>
           <strong>{{ alertDuration.value }}</strong>
         </div>
 
         <!-- 觸發原因列表（有預警時才顯示） -->
-        <div v-if="!isHealthy && alertData.triggerReasons.length > 0" class="reason-block">
+        <div v-if="isHistoryMode && historyErrorMessage" class="summary-card">
+          {{ historyErrorMessage }}
+        </div>
+        <div v-else-if="isHistoryMode && isHistoryLoading" class="summary-card">
+          正在向伺服器取得預警詳情...
+        </div>
+        <div v-else-if="isHistoryMode && historyTriggerReasons.length > 0" class="reason-block">
+          <p class="reason-title">觸發原因</p>
+          <ul class="reason-list">
+            <li v-for="reason in historyTriggerReasons" :key="reason">
+              {{ reason }}
+            </li>
+          </ul>
+        </div>
+        <div v-else-if="!showHealthyState && alertData.triggerReasons.length > 0" class="reason-block">
           <p class="reason-title">觸發原因</p>
           <ul class="reason-list">
             <li v-for="reason in alertData.triggerReasons" :key="reason">
@@ -169,7 +396,7 @@ const hrvTrendLabel = computed(() => {
         </div>
 
         <!-- 健康說明（無警報時顯示） -->
-        <div v-else-if="isHealthy" class="summary-card healthy">
+        <div v-else-if="showHealthyState" class="summary-card healthy">
           目前所有生理指標均在正常範圍內，系統持續監測中。如出現異常，將即時通知您。
         </div>
       </section>
@@ -178,8 +405,33 @@ const hrvTrendLabel = computed(() => {
       <section class="alert-info">
         <dl class="alert-meta">
           <div v-for="item in alertInfoItems" :key="item.label">
+            <span class="meta-icon">
+              <AppIcon
+                :name="item.icon"
+                :size="META_ICON_SIZE"
+                :stroke-width="META_ICON_STROKE_WIDTH"
+              />
+            </span>
             <dt>{{ item.label }}</dt>
             <dd>{{ item.value }}</dd>
+          </div>
+          <div v-if="isHistoryMode && historyDetail?.sourceType === 'realtime' && historyDetail.statusHistory.length > 0">
+            <span class="meta-icon">
+              <AppIcon
+                name="sync"
+                :size="META_ICON_SIZE"
+                :stroke-width="META_ICON_STROKE_WIDTH"
+              />
+            </span>
+            <dt>狀態歷程</dt>
+            <dd class="history-timeline">
+              <span
+                v-for="item in historyDetail.statusHistory"
+                :key="`${item.statusTime}-${item.status}`"
+              >
+                {{ formatTime(item.statusTime) }} {{ item.statusLabel }}
+              </span>
+            </dd>
           </div>
         </dl>
       </section>
@@ -266,38 +518,23 @@ const hrvTrendLabel = computed(() => {
 
 /* ── Icon ── */
 .alert-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 16px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
-  color: #fff;
-  font-size: 1.3rem;
-  font-weight: 800;
-  background: linear-gradient(180deg, #62c655 0%, #37a249 100%);
-  box-shadow: 0 4px 12px rgba(98, 198, 85, 0.35);
-  transition: background 0.3s ease, box-shadow 0.3s ease;
+  color: #37a249;
 }
 
 .alert-icon.warning {
-  background: linear-gradient(180deg, #ffc107 0%, #ff9800 100%);
-  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.35);
+  color: #db7b12;
 }
 
 .alert-icon.critical {
-  background: linear-gradient(180deg, #ff9800 0%, #f44336 100%);
-  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+  color: #c94a00;
 }
 
 .alert-icon.severe {
-  background: linear-gradient(180deg, #f44336 0%, #c62828 100%);
-  box-shadow: 0 4px 12px rgba(198, 40, 40, 0.5);
-  animation: pulse-severe 1.4s ease-in-out infinite;
-}
-
-@keyframes pulse-severe {
-  0%, 100% { box-shadow: 0 4px 12px rgba(198, 40, 40, 0.5); }
-  50%       { box-shadow: 0 6px 20px rgba(198, 40, 40, 0.75); }
+  color: #b71c1c;
 }
 
 /* ── Section label ── */
@@ -324,8 +561,14 @@ const hrvTrendLabel = computed(() => {
   display: block;
   margin-top: 4px;
   font-size: 0.82rem;
-  line-height: 1.4;
+  line-height: 1.45;
   color: #6d8094;
+  max-width: 28ch;
+  display: -webkit-box;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ── Status chip ── */
@@ -475,12 +718,23 @@ const hrvTrendLabel = computed(() => {
 
 .alert-meta div {
   display: grid;
-  gap: 4px;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  row-gap: 4px;
   padding: 12px 0;
 }
 
 .alert-meta div + div {
   border-top: 1px solid rgba(22, 50, 80, 0.08);
+}
+
+.meta-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  color: #6f8298;
+  margin-top: 2px;
 }
 
 .alert-meta dt,
@@ -489,13 +743,27 @@ const hrvTrendLabel = computed(() => {
 }
 
 .alert-meta dt {
+  grid-column: 2;
   font-size: 0.8rem;
   color: #6d8094;
 }
 
 .alert-meta dd {
+  grid-column: 2;
   font-size: 0.95rem;
   font-weight: 600;
   color: #163250;
+}
+
+.history-timeline {
+  display: grid;
+  gap: 8px;
+}
+
+.history-timeline span {
+  display: block;
+  color: #35536f;
+  font-size: 0.84rem;
+  line-height: 1.45;
 }
 </style>

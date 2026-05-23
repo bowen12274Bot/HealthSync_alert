@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 
+import AppIcon from '@/components/AppIcon.vue'
 import AppShell from '@/components/AppShell.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const settingItems = [
-  '個人資料',
-  '通知設定',
-  '同步設定',
-  '關於系統',
-  '登出',
-]
+  { label: '個人資料', icon: 'user' },
+  { label: '通知設定', icon: 'bell' },
+  { label: '同步設定', icon: 'sync' },
+  { label: '關於系統', icon: 'info' },
+  { label: '登出', icon: 'logout' },
+] as const
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -33,13 +34,18 @@ async function handleSettingAction(item: string) {
     <section class="settings-card">
       <button
         v-for="item in settingItems"
-        :key="item"
+        :key="item.label"
         class="settings-item"
         type="button"
-        @click="handleSettingAction(item)"
+        @click="handleSettingAction(item.label)"
       >
-        <span>{{ item }}</span>
-        <span class="item-arrow">></span>
+        <span class="item-copy">
+          <span class="item-icon">
+            <AppIcon :name="item.icon" :size="19" :stroke-width="2.1" />
+          </span>
+          <span>{{ item.label }}</span>
+        </span>
+        <span class="item-arrow"><AppIcon name="chevron-right" :size="16" :stroke-width="2.2" /></span>
       </button>
     </section>
   </AppShell>
@@ -67,12 +73,30 @@ async function handleSettingAction(item: string) {
   text-align: left;
 }
 
+.item-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.item-icon {
+  color: #2e66b1;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+
 .settings-item + .settings-item {
   border-top: 1px solid rgba(20, 48, 77, 0.08);
 }
 
 .item-arrow {
   color: #7890a8;
-  font-size: 1rem;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
 }
 </style>

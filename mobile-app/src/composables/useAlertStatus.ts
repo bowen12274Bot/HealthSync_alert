@@ -1,5 +1,4 @@
-
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   getActiveRealtimeAlert,
   getLatestAlertStatus,
@@ -19,24 +18,120 @@ interface AlertStatusData {
   lastResolvedTime: string | null
 }
 
-export function useAlertStatus() {
-  const alertData = ref<AlertStatusData>({
-    hasActiveAlert: false,
-    alertType: null,
-    riskScore: 0,
-    severity: 0,
-    status: null,
-    triggerReasons: [],
-    detectionStartTime: null,
-    firstOccurredAt: null,
-    lastResolvedTime: null,
-  })
+const POLLING_INTERVAL_MS = 5000
 
-  const isHealthy = computed(() => alertData.value.riskScore <= 2)
+const defaultAlertStatusData = (): AlertStatusData => ({
+  hasActiveAlert: false,
+  alertType: null,
+  riskScore: 0,
+  severity: 0,
+  status: null,
+  triggerReasons: [],
+  detectionStartTime: null,
+  firstOccurredAt: null,
+  lastResolvedTime: null,
+})
+
+const alertData = ref<AlertStatusData>(defaultAlertStatusData())
+let intervalId: ReturnType<typeof setInterval> | null = null
+let activeConsumers = 0
+let inFlightFetch: Promise<void> | null = null
+
+function getAlertSeverityLevel(riskScore: number): 0 | 1 | 2 | 3 {
+  if (riskScore <= 2) return 0
+  if (riskScore <= 4) return 1
+  if (riskScore <= 6) return 2
+  return 3
+}
+
+async function fetchAlertStatus(): Promise<void> {
+  try {
+    const activeAlert = await getActiveRealtimeAlert()
+
+    if (activeAlert === null) {
+      const latestAlert = await getLatestRealtimeAlert()
+      const lastResolvedTime = latestAlert?.detectionEndTime ?? null
+
+      alertData.value = {
+        hasActiveAlert: false,
+        alertType: null,
+        riskScore: 0,
+        severity: 0,
+        status: null,
+        triggerReasons: [],
+        detectionStartTime: null,
+        firstOccurredAt: null,
+        lastResolvedTime,
+      }
+      return
+    }
+
+    const latestStatus = await getLatestAlertStatus(activeAlert.alertId)
+    if (latestStatus === null) {
+      return
+    }
+
+    const triggerReasons = latestStatus.statusDescription
+      .split(' / ')
+      .filter((reason) => reason.trim().length > 0)
+
+    alertData.value = {
+      hasActiveAlert: true,
+      alertType: activeAlert.alertType as AlertType,
+      riskScore: latestStatus.riskScore,
+      severity: getAlertSeverityLevel(latestStatus.riskScore),
+      status: latestStatus.status,
+      triggerReasons,
+      detectionStartTime: activeAlert.detectionStartTime,
+      firstOccurredAt: activeAlert.firstOccurredAt,
+      lastResolvedTime: null,
+    }
+  } catch (error) {
+    console.error('Failed to fetch alert status:', error)
+    alertData.value = defaultAlertStatusData()
+  }
+}
+
+export async function refreshAlertStatus(): Promise<void> {
+  if (inFlightFetch !== null) {
+    await inFlightFetch
+    return
+  }
+
+  inFlightFetch = fetchAlertStatus().finally(() => {
+    inFlightFetch = null
+  })
+  await inFlightFetch
+}
+
+function ensurePollingStarted(): void {
+  if (intervalId !== null) {
+    return
+  }
+
+  void refreshAlertStatus()
+  intervalId = setInterval(() => {
+    void refreshAlertStatus()
+  }, POLLING_INTERVAL_MS)
+}
+
+function stopPollingIfIdle(): void {
+  if (activeConsumers > 0 || intervalId === null) {
+    return
+  }
+
+  clearInterval(intervalId)
+  intervalId = null
+}
+
+export function useAlertStatus() {
+  const hasActiveAlert = computed(() => alertData.value.hasActiveAlert)
+  const isHealthy = computed(() => !alertData.value.hasActiveAlert)
 
   const alertLevel = computed(() => {
+    if (!alertData.value.hasActiveAlert) return 'healthy'
+
     const score = alertData.value.riskScore
-    if (score <= 2) return 'healthy'
     if (score <= 4) return 'warning'
     if (score <= 6) return 'critical'
     return 'severe'
@@ -58,14 +153,13 @@ export function useAlertStatus() {
   })
 
   const alertSubtitle = computed(() => {
-    if (isHealthy.value) {
+    if (!alertData.value.hasActiveAlert) {
       return '目前所有指標在正常範圍內'
     }
     return alertData.value.triggerReasons.join(' / ') || '檢測到異常指標'
   })
 
   const alertDuration = computed(() => {
-    // 有活躍警報時 → 顯示警告持續時間
     if (alertData.value.hasActiveAlert && alertData.value.detectionStartTime) {
       const start = new Date(alertData.value.detectionStartTime).getTime()
       const now = Date.now()
@@ -75,124 +169,50 @@ export function useAlertStatus() {
       if (diffMins < 60) {
         return { label: '警告持續', value: `${diffMins} 分鐘` }
       }
+
       const diffHours = Math.floor(diffMins / 60)
       if (diffHours < 24) {
         return { label: '警告持續', value: `${diffHours} 小時` }
       }
+
       const diffDays = Math.floor(diffHours / 24)
       return { label: '警告持續', value: `${diffDays} 天` }
     }
 
-    // 無警報時 → 基於最後一次警報解決時間計算持續健康天數
     if (alertData.value.lastResolvedTime) {
       const resolvedTime = new Date(alertData.value.lastResolvedTime).getTime()
       const now = Date.now()
       const diffMs = now - resolvedTime
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-      // 本地資料只保留 7 天，7 天都健康就說「近七天健康狀態良好」
       if (diffDays >= 7) {
-        return { label: '持續健康', value: '近七天' }
+        return { label: '持續健康', value: '7 天' }
       }
+
       return { label: '持續健康', value: `${diffDays} 天` }
     }
 
-    // 沒有警報紀錄 → 預設 7 天
-    return { label: '持續健康', value: '近七天' }
+    return { label: '持續健康', value: '7 天' }
   })
 
-  const getAlertSeverityLevel = (riskScore: number): 0 | 1 | 2 | 3 => {
-    if (riskScore <= 2) return 0
-    if (riskScore <= 4) return 1
-    if (riskScore <= 6) return 2
-    return 3
-  }
-
-  const fetchAlertStatus = async () => {
-    try {
-      const activeAlert = await getActiveRealtimeAlert()
-
-      if (activeAlert === null) {
-        // 無活躍警報 → 查詢最後一次警報的解決時間
-        const latestAlert = await getLatestRealtimeAlert()
-        const lastResolvedTime = latestAlert?.detectionEndTime ?? null
-
-        alertData.value = {
-          hasActiveAlert: false,
-          alertType: null,
-          riskScore: 0,
-          severity: 0,
-          status: null,
-          triggerReasons: [],
-          detectionStartTime: null,
-          firstOccurredAt: null,
-          lastResolvedTime,
-        }
-        return
-      }
-
-      // 有活躍警報 → 取得最新狀態
-      const latestStatus = await getLatestAlertStatus(activeAlert.alertId)
-
-      if (latestStatus === null) {
-        return
-      }
-
-      // 解析 trigger reasons（從 statusDescription 分割）
-      const triggerReasons = latestStatus.statusDescription
-        .split(' / ')
-        .filter((reason) => reason.trim().length > 0)
-
-      alertData.value = {
-        hasActiveAlert: true,
-        alertType: activeAlert.alertType as AlertType,
-        riskScore: latestStatus.riskScore,
-        severity: getAlertSeverityLevel(latestStatus.riskScore),
-        status: latestStatus.status,
-        triggerReasons,
-        detectionStartTime: activeAlert.detectionStartTime,
-        firstOccurredAt: activeAlert.firstOccurredAt,
-        lastResolvedTime: null,
-      }
-    } catch (error) {
-      console.error('Failed to fetch alert status:', error)
-      // 發生錯誤時保持健康狀態
-      alertData.value = {
-        hasActiveAlert: false,
-        alertType: null,
-        riskScore: 0,
-        severity: 0,
-        status: null,
-        triggerReasons: [],
-        detectionStartTime: null,
-        firstOccurredAt: null,
-        lastResolvedTime: null,
-      }
-    }
-  }
-
-  let intervalId: ReturnType<typeof setInterval> | null = null
-
-  onMounted(async () => {
-    // 初始化時立即獲取一次
-    await fetchAlertStatus()
-
-    // 每 5 秒檢查一次警報狀態
-    intervalId = setInterval(fetchAlertStatus, 5000)
+  onMounted(() => {
+    activeConsumers += 1
+    ensurePollingStarted()
   })
 
   onUnmounted(() => {
-    if (intervalId !== null) {
-      clearInterval(intervalId)
-    }
+    activeConsumers = Math.max(0, activeConsumers - 1)
+    stopPollingIfIdle()
   })
 
   return {
     alertData,
+    hasActiveAlert,
     isHealthy,
     alertLevel,
     alertTitle,
     alertSubtitle,
     alertDuration,
+    refreshAlertStatus,
   }
 }
