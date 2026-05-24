@@ -159,6 +159,23 @@ export function useAlertStatus() {
     return alertData.value.triggerReasons.join(' / ') || '檢測到異常指標'
   })
 
+  const alertSummary = computed(() => {
+    if (!alertData.value.hasActiveAlert) {
+      return '目前所有指標在正常範圍內'
+    }
+
+    switch (alertData.value.alertType) {
+      case 'spo2_risk':
+        return 'SpO2 指標已低於安全範圍，建議立即確認身體狀況'
+      case 'physiological_stress':
+        return '生理壓力持續偏高，請留意目前活動與恢復狀態'
+      case 'combined_physiological_risk':
+        return '多項生理指標同時異常，建議立即查看詳細資訊'
+      default:
+        return '檢測到異常指標，建議查看詳細資訊'
+    }
+  })
+
   const alertDuration = computed(() => {
     if (alertData.value.hasActiveAlert && alertData.value.detectionStartTime) {
       const start = new Date(alertData.value.detectionStartTime).getTime()
@@ -212,6 +229,7 @@ export function useAlertStatus() {
     alertLevel,
     alertTitle,
     alertSubtitle,
+    alertSummary,
     alertDuration,
     refreshAlertStatus,
   }

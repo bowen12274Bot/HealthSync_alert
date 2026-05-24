@@ -169,6 +169,14 @@ function openSimulationView(): void {
   color: #6d8094;
 }
 
+.status-copy span {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .status-pill {
   min-width: 88px;
   padding: 10px 12px;
@@ -297,7 +305,7 @@ const { isOnline, isPinging, isRetrying, retryCountdownSeconds } = useConnection
 const router = useRouter()
 const { currentScenarioName, simulationStatusText } = useSimulationControl()
 const { heartRate, hrv, spO2 } = useLatestHealthRecord()
-const { hasActiveAlert, isHealthy, alertLevel, alertTitle, alertSubtitle, alertDuration, refreshAlertStatus } =
+const { hasActiveAlert, isHealthy, alertLevel, alertTitle, alertSummary, alertDuration, refreshAlertStatus } =
   useAlertStatus()
 
 function openSimulationView(): void {
@@ -335,14 +343,14 @@ function statusIconName(): 'warning' | 'check' {
         <div class="status-mark" :class="{ 'is-healthy': isHealthy, [alertLevel]: !isHealthy }">
           <AppIcon
             :name="statusIconName()"
-            :size="isHealthy ? 24 : 26"
-            :stroke-width="isHealthy ? 2.6 : 2.2"
+            :size="24"
+            :stroke-width="2.6"
           />
         </div>
         <div class="status-copy">
           <p class="section-label">健康狀態</p>
           <strong>{{ alertTitle }}</strong>
-          <span>{{ alertSubtitle }}</span>
+          <span>{{ alertSummary }}</span>
         </div>
         <div class="status-pill" :class="{ 'is-healthy': isHealthy, [alertLevel]: !isHealthy }">
           <span>{{ alertDuration.label }}</span>
@@ -435,17 +443,14 @@ function statusIconName(): 'warning' | 'check' {
 
 .status-card.is-warning {
   background: linear-gradient(135deg, rgba(255, 193, 7, 0.05), rgba(255, 152, 0, 0.05));
-  border: 1px solid rgba(255, 152, 0, 0.2);
 }
 
 .status-card.is-critical {
   background: linear-gradient(135deg, rgba(255, 152, 0, 0.05), rgba(244, 67, 54, 0.05));
-  border: 1px solid rgba(244, 67, 54, 0.2);
 }
 
 .status-card.is-severe {
   background: linear-gradient(135deg, rgba(244, 67, 54, 0.08), rgba(198, 40, 40, 0.08));
-  border: 1px solid rgba(198, 40, 40, 0.3);
 }
 
 .status-mark {
@@ -467,30 +472,24 @@ function statusIconName(): 'warning' | 'check' {
 }
 
 .status-mark.warning {
-  width: 48px;
-  height: 48px;
-  border-radius: 0;
-  background: none;
-  color: #f39815;
-  box-shadow: none;
+  background: linear-gradient(180deg, #f9bf4b 0%, #f39815 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 6px 14px rgba(243, 152, 21, 0.24);
 }
 
 .status-mark.critical {
-  width: 48px;
-  height: 48px;
-  border-radius: 0;
-  background: none;
-  color: #eb8d12;
-  box-shadow: none;
+  background: linear-gradient(180deg, #f3a54a 0%, #eb7d12 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 6px 14px rgba(235, 125, 18, 0.24);
 }
 
 .status-mark.severe {
-  width: 48px;
-  height: 48px;
-  border-radius: 0;
-  background: none;
-  color: #dc6a29;
-  box-shadow: none;
+  background: linear-gradient(180deg, #ef8a62 0%, #dc6a29 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 6px 14px rgba(220, 106, 41, 0.24);
 }
 
 .status-copy {
