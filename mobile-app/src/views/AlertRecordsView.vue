@@ -66,6 +66,49 @@ function resolveHistoryTypeTone(
   }
 }
 
+function formatHistoryMetaLabel(
+  occurredAt: string,
+  resolvedAt: string | null,
+  sourceType: 'realtime' | 'long_term',
+): string {
+  const occurred = new Date(occurredAt)
+
+  if (sourceType === 'realtime' || resolvedAt === null) {
+    return formatDateTimeLabel(occurred)
+  }
+
+  const resolved = new Date(resolvedAt)
+  const sameDay =
+    occurred.getUTCFullYear() === resolved.getUTCFullYear()
+    && occurred.getUTCMonth() === resolved.getUTCMonth()
+    && occurred.getUTCDate() === resolved.getUTCDate()
+
+  if (sameDay) {
+    return `${formatDateTimeLabel(occurred)} - ${formatTimeLabel(resolved)}`
+  }
+
+  return `${formatDateLabel(occurred)} - ${formatDateLabel(resolved)}`
+}
+
+function formatDateTimeLabel(value: Date): string {
+  return `${formatDateLabel(value)} ${formatTimeLabel(value)}`
+}
+
+function formatDateLabel(value: Date): string {
+  const year = value.getUTCFullYear()
+  const month = String(value.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(value.getUTCDate()).padStart(2, '0')
+
+  return `${year}/${month}/${day}`
+}
+
+function formatTimeLabel(value: Date): string {
+  const hour = String(value.getUTCHours()).padStart(2, '0')
+  const minute = String(value.getUTCMinutes()).padStart(2, '0')
+
+  return `${hour}:${minute}`
+}
+
 async function loadAlertHistory(force = false): Promise<void> {
   if (!isOnline.value) {
     errorMessage.value = ''
@@ -168,7 +211,7 @@ watch(isOnline, (nextIsOnline) => {
             <div class="history-copy">
               <span class="history-type">{{ item.title }}</span>
               <div class="history-meta">
-                <small>{{ item.timeRangeLabel }}</small>
+                <small>{{ formatHistoryMetaLabel(item.occurredAt, item.resolvedAt, item.sourceType) }}</small>
                 <span class="level-chip">{{ item.displaySeverityLabel }}</span>
               </div>
             </div>
@@ -318,16 +361,20 @@ watch(isOnline, (nextIsOnline) => {
 }
 
 .history-meta {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
 .history-copy small {
   color: #6f819a;
   font-size: 0.75rem;
   line-height: 1.15;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-side {

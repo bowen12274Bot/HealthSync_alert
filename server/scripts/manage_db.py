@@ -21,11 +21,22 @@ def run_seed() -> None:
         db.close()
 
 
+def run_demo_seed() -> None:
+    load_model_modules()
+    from app.core.seed import seed_demo_scenario
+
+    db = SessionLocal()
+    try:
+        seed_demo_scenario(db)
+    finally:
+        db.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage server database lifecycle.")
     parser.add_argument(
         "command",
-        choices=("create", "drop", "reset", "seed"),
+        choices=("create", "drop", "reset", "seed", "seed-demo"),
         help="Database management action to run.",
     )
     args = parser.parse_args()
@@ -40,6 +51,10 @@ def main() -> None:
 
     if args.command == "reset":
         reset_db_tables()
+        return
+
+    if args.command == "seed-demo":
+        run_demo_seed()
         return
 
     run_seed()

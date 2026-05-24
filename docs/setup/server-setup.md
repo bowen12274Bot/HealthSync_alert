@@ -44,6 +44,7 @@ docker compose exec api python scripts/manage_db.py create
 docker compose exec api python scripts/manage_db.py drop
 docker compose exec api python scripts/manage_db.py reset
 docker compose exec api python scripts/manage_db.py seed
+docker compose exec api python scripts/manage_db.py seed-demo
 ```
 
 其中：
@@ -52,5 +53,6 @@ docker compose exec api python scripts/manage_db.py seed
 - `drop`：刪除資料表
 - `reset`：重建資料表
 - `seed`：寫入預設測試資料
+- `seed-demo`：為 demo 帳號重建 60 天展示資料，包含週期健康資料、預警歷史與長期預警
 
 如果有特殊需求，例如要改成在本機終端機直接啟動後端和操作資料庫，再請 AI 協助處理即可。
